@@ -7,6 +7,8 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg?logo=vue.js&logoColor=white)](https://vuejs.org/) [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![ClickHouse](https://img.shields.io/badge/ClickHouse-Ready-FFCC00.svg?logo=clickhouse&logoColor=black)](https://clickhouse.com/) [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql&logoColor=white)](https://www.mysql.com/) [![Redis](https://img.shields.io/badge/Redis-Active-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+![云枢 · 数据服务平台概览](docs/images/overview.png)
+
 **云枢 · 数据服务平台**是面向企业数据消费场景的一站式 **Data-as-a-Service (DaaS)** 中枢。它将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，为 AI Agent、运营控制台与业务系统提供标准化数据访问能力。
 
 平台核心聚焦于以下能力矩阵：
@@ -22,52 +24,7 @@
 
 ## 🏛️ 系统架构 (Architecture)
 
-```mermaid
-graph TD
-    Client["客户端 / AI Agent / 业务系统"] --> Gateway["API 网关 / Nginx"]
-    Gateway --> API["FastAPI 接入层"]
-
-    subgraph "核心引擎 (Core Engine)"
-        API --> Auth["鉴权 & 限流 (Redis)"]
-        Auth --> Meta["元数据中心 (MetaService)"]
-        Meta --> QueryEngine["查询引擎 (DSL Parser)"]
-        QueryEngine --> Adapter["多源适配器 (Adapter Layer)"]
-    end
-
-    subgraph "存储与运维 (Persistence & Ops)"
-        Adapter --> DB[(MySQL / ClickHouse / Oracle)]
-        API --> Jobs["异步作业 (APScheduler)"]
-        Jobs --> Audit[(按天分表审计日志)]
-        Jobs --> Stats[(分钟级统计汇总)]
-    end
-```
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│                   云枢 · 数据服务平台                     │
-└───────────────┬────────────────────────────┬─────────────┘
-                │                            │
-        [ 对外 Data API ]            [ 管理控制后台 Portal ]
-         /api/v1/query                  (Vue 3 Admin)
-                │                            │
-                └─────────────┬──────────────┘
-                              │ HTTP
-┌─────────────────────────────▼────────────────────────────┐
-│                    核心网关 (FastAPI)                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ 统一鉴权 │  │ 资源路由 │  │ SQL 护栏 │  │ 审计回溯 │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│              多源数据适配层 (Data Adapter Layer)            │
-│     MySQL Adapter  │  ClickHouse Adapter  │  Oracle Adapter │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│        企业数据源 (MySQL / ClickHouse / Oracle)           │
-└──────────────────────────────────────────────────────────┘
-```
+![云枢 · 数据服务平台技术架构](docs/images/architech.png)
 
 ---
 

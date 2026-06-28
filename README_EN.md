@@ -7,6 +7,8 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg?logo=vue.js&logoColor=white)](https://vuejs.org/) [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![ClickHouse](https://img.shields.io/badge/ClickHouse-Ready-FFCC00.svg?logo=clickhouse&logoColor=black)](https://clickhouse.com/) [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql&logoColor=white)](https://www.mysql.com/) [![Redis](https://img.shields.io/badge/Redis-Active-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+![Yunshu API Data Platform Overview](docs/images/overview.png)
+
 **Yunshu API Data Platform** is a one-stop **Data-as-a-Service (DaaS)** hub for enterprise data consumption. It wraps physical tables, custom SQL, and semantic metadata into governable, auditable, and observable RESTful APIs — providing standardized data access for AI agents, operations consoles, and business systems.
 
 The platform focuses on the following core capability matrix:
@@ -22,53 +24,7 @@ The platform focuses on the following core capability matrix:
 
 ## 🏛️ Architecture
 
-```mermaid
-graph TD
-    Client["Clients / AI Agents / Business Systems"] --> Gateway["API Gateway / Nginx"]
-    Gateway --> API["FastAPI Layer"]
-
-    subgraph "Core Engine"
-        API --> Auth["Auth & Rate Limiting (Redis)"]
-        Auth --> Meta["Metadata Center (MetaService)"]
-        Meta --> QueryEngine["Query Engine (DSL Parser)"]
-        QueryEngine --> Adapter["Multi-Source Adapters"]
-    end
-
-    subgraph "Persistence & Ops"
-        Adapter --> DB[(MySQL / ClickHouse / Oracle)]
-        API --> Jobs["Background Jobs (APScheduler)"]
-        Jobs --> Audit[(Daily-Sharded Audit Logs)]
-        Jobs --> Stats[(Minute-Level Stats)]
-    end
-```
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│              Yunshu API Data Platform                    │
-└───────────────┬────────────────────────────┬─────────────┘
-                │                            │
-        [ Public Data API ]          [ Admin Portal Console ]
-         /api/v1/query                  (Vue 3 Admin)
-                │                            │
-                └─────────────┬──────────────┘
-                              │ HTTP
-┌─────────────────────────────▼────────────────────────────┐
-│                    Core Gateway (FastAPI)                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │   Auth   │  │ Resource │  │SQL Guard │  │  Audit   │   │
-│  │  & Perm  │  │  Router  │  │          │  │  Trace   │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│              Data Adapter Layer                            │
-│     MySQL Adapter  │  ClickHouse Adapter  │  Oracle Adapter │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│        Enterprise Data Sources (MySQL / CK / Oracle)       │
-└──────────────────────────────────────────────────────────┘
-```
+![Yunshu API Data Platform Architecture](docs/images/architech.png)
 
 ---
 
