@@ -114,7 +114,7 @@ graph TD
 4.  **对外调用**：客户端携带 `X-API-Key` 调用 `/api/v1/query` 或资源直连接口。
 5.  **审计回溯**：所有调用写入按天分表日志，支持 Trace ID 排障。
 
-详见 [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
+详见 [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
 
 ---
 
@@ -123,14 +123,12 @@ graph TD
 | 文档 | 说明 |
 |------|------|
 | [HOW_TO_INSTALL.md](HOW_TO_INSTALL.md) | 安装部署与 FAQ |
-| [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) | 对外 API 集成指南 |
+| [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) | 对外 API 集成指南 |
 | [docs/guides/getting-started.md](docs/guides/getting-started.md) | 开发者快速入门 |
-| [docs/ORACLE_INTEGRATION_GUIDE.md](docs/ORACLE_INTEGRATION_GUIDE.md) | Oracle 数据源接入 |
-| [docs/sso.md](docs/sso.md) | SSO 单点登录配置 |
+| [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md) | Oracle 数据源接入 |
 | [db-prod/README.md](db-prod/README.md) | 数据库迁移与幂等 apply 工具 |
 | [docker/README.md](docker/README.md) | Docker 构建与部署 |
-| [architech/design/GLOBAL_SYSTEM_OVERVIEW.md](architech/design/GLOBAL_SYSTEM_OVERVIEW.md) | 云枢全局系统架构 |
-| [architech/design/API_SERVICE_SYSTEM_DESIGN.md](architech/design/API_SERVICE_SYSTEM_DESIGN.md) | 数据服务平台系统设计 |
+| [architech/design/redis_key_design.md](architech/design/redis_key_design.md) | Redis Key 设计说明 |
 | [tests/CHECKLIST.md](tests/CHECKLIST.md) | 自动化测试验收清单 |
 
 ---
@@ -280,8 +278,9 @@ cd frontend && npm run dev
 
 1. **分支规范**：基于 `main` 开发，功能分支命名 `feature/your-feature-name`。
 2. **提交信息**：使用 **中文** Commit Message，遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范。
-3. **测试验收**：新增功能请更新 [tests/CHECKLIST.md](tests/CHECKLIST.md)。
-4. **数据库变更**：在 `db-prod/` 新增 `V{N}-description.sql`，确保迁移脚本可幂等重复执行。
+3. **Pull Request**：创建 PR 时请按 [PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md) 填写说明与测试清单。
+4. **测试验收**：新增功能请更新 [tests/CHECKLIST.md](tests/CHECKLIST.md)。
+5. **数据库变更**：在 `db-prod/` 新增 `V{N}-description.sql`，确保迁移脚本可幂等重复执行。
 
 ---
 

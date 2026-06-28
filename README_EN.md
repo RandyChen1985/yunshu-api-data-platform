@@ -115,7 +115,7 @@ graph TD
 4.  **External calls**: Clients call `/api/v1/query` or direct resource endpoints with `X-API-Key`.
 5.  **Audit & trace**: All calls are logged in daily-sharded tables with Trace ID support.
 
-See [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
+See [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
 
 ---
 
@@ -124,14 +124,12 @@ See [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) · [docs/guid
 | Doc | Description |
 |-----|-------------|
 | [HOW_TO_INSTALL.md](HOW_TO_INSTALL.md) | Installation & FAQ |
-| [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) | Public API integration guide |
+| [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) | Public API integration guide |
 | [docs/guides/getting-started.md](docs/guides/getting-started.md) | Developer quick start |
-| [docs/ORACLE_INTEGRATION_GUIDE.md](docs/ORACLE_INTEGRATION_GUIDE.md) | Oracle data source setup |
-| [docs/sso.md](docs/sso.md) | SSO configuration |
+| [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md) | Oracle data source setup |
 | [db-prod/README.md](db-prod/README.md) | Database migrations & idempotent apply tools |
 | [docker/README.md](docker/README.md) | Docker build & deployment |
-| [architech/design/GLOBAL_SYSTEM_OVERVIEW.md](architech/design/GLOBAL_SYSTEM_OVERVIEW.md) | Yunshu global architecture |
-| [architech/design/API_SERVICE_SYSTEM_DESIGN.md](architech/design/API_SERVICE_SYSTEM_DESIGN.md) | Data platform system design |
+| [architech/design/redis_key_design.md](architech/design/redis_key_design.md) | Redis key design |
 | [tests/CHECKLIST.md](tests/CHECKLIST.md) | Automated test checklist |
 
 ---
@@ -281,8 +279,9 @@ Issues and Pull Requests are welcome.
 
 1. **Branching**: Develop from `main`; feature branches named `feature/your-feature-name`.
 2. **Commit messages**: Write in **Chinese**, following [Conventional Commits](https://www.conventionalcommits.org/).
-3. **Testing**: Update [tests/CHECKLIST.md](tests/CHECKLIST.md) when adding features.
-4. **DB changes**: Add `V{N}-description.sql` under `db-prod/`; migrations must be idempotent.
+3. **Pull Request**: Use [PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md) when opening a PR.
+4. **Testing**: Update [tests/CHECKLIST.md](tests/CHECKLIST.md) when adding features.
+5. **DB changes**: Add `V{N}-description.sql` under `db-prod/`; migrations must be idempotent.
 
 ---
 

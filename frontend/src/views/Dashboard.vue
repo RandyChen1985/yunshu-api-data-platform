@@ -8,7 +8,7 @@ import MyPermissionsModal from '../components/MyPermissionsModal.vue'
 const router = useRouter()
 const route = useRoute()
 const appVersion = import.meta.env.VITE_APP_VERSION || 'Dev Build'
-const repoUrl = ''
+const repoUrl = 'https://github.com/RandyChen1985/yunshu-api-data-platform'
 const isCollapsed = ref(false)
 const showLogoutDialog = ref(false)
 const showUserInfoDialog = ref(false)
