@@ -7,6 +7,8 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg?logo=vue.js&logoColor=white)](https://vuejs.org/) [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![ClickHouse](https://img.shields.io/badge/ClickHouse-Ready-FFCC00.svg?logo=clickhouse&logoColor=black)](https://clickhouse.com/) [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql&logoColor=white)](https://www.mysql.com/) [![Redis](https://img.shields.io/badge/Redis-Active-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+![Yunshu API Data Platform Overview](docs/images/overview.png)
+
 **Yunshu API Data Platform** is a one-stop **Data-as-a-Service (DaaS)** hub for enterprise data consumption. It wraps physical tables, custom SQL, and semantic metadata into governable, auditable, and observable RESTful APIs — providing standardized data access for AI agents, operations consoles, and business systems.
 
 The platform focuses on the following core capability matrix:
@@ -22,53 +24,7 @@ The platform focuses on the following core capability matrix:
 
 ## 🏛️ Architecture
 
-```mermaid
-graph TD
-    Client["Clients / AI Agents / Business Systems"] --> Gateway["API Gateway / Nginx"]
-    Gateway --> API["FastAPI Layer"]
-
-    subgraph "Core Engine"
-        API --> Auth["Auth & Rate Limiting (Redis)"]
-        Auth --> Meta["Metadata Center (MetaService)"]
-        Meta --> QueryEngine["Query Engine (DSL Parser)"]
-        QueryEngine --> Adapter["Multi-Source Adapters"]
-    end
-
-    subgraph "Persistence & Ops"
-        Adapter --> DB[(MySQL / ClickHouse / Oracle)]
-        API --> Jobs["Background Jobs (APScheduler)"]
-        Jobs --> Audit[(Daily-Sharded Audit Logs)]
-        Jobs --> Stats[(Minute-Level Stats)]
-    end
-```
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│              Yunshu API Data Platform                    │
-└───────────────┬────────────────────────────┬─────────────┘
-                │                            │
-        [ Public Data API ]          [ Admin Portal Console ]
-         /api/v1/query                  (Vue 3 Admin)
-                │                            │
-                └─────────────┬──────────────┘
-                              │ HTTP
-┌─────────────────────────────▼────────────────────────────┐
-│                    Core Gateway (FastAPI)                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │   Auth   │  │ Resource │  │SQL Guard │  │  Audit   │   │
-│  │  & Perm  │  │  Router  │  │          │  │  Trace   │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│              Data Adapter Layer                            │
-│     MySQL Adapter  │  ClickHouse Adapter  │  Oracle Adapter │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│        Enterprise Data Sources (MySQL / CK / Oracle)       │
-└──────────────────────────────────────────────────────────┘
-```
+![Yunshu API Data Platform Architecture](docs/images/architech.png)
 
 ---
 
@@ -115,7 +71,7 @@ graph TD
 4.  **External calls**: Clients call `/api/v1/query` or direct resource endpoints with `X-API-Key`.
 5.  **Audit & trace**: All calls are logged in daily-sharded tables with Trace ID support.
 
-See [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
+See [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
 
 ---
 
@@ -124,14 +80,12 @@ See [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) · [docs/guid
 | Doc | Description |
 |-----|-------------|
 | [HOW_TO_INSTALL.md](HOW_TO_INSTALL.md) | Installation & FAQ |
-| [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) | Public API integration guide |
+| [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) | Public API integration guide |
 | [docs/guides/getting-started.md](docs/guides/getting-started.md) | Developer quick start |
-| [docs/ORACLE_INTEGRATION_GUIDE.md](docs/ORACLE_INTEGRATION_GUIDE.md) | Oracle data source setup |
-| [docs/sso.md](docs/sso.md) | SSO configuration |
+| [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md) | Oracle data source setup |
 | [db-prod/README.md](db-prod/README.md) | Database migrations & idempotent apply tools |
 | [docker/README.md](docker/README.md) | Docker build & deployment |
-| [architech/design/GLOBAL_SYSTEM_OVERVIEW.md](architech/design/GLOBAL_SYSTEM_OVERVIEW.md) | Yunshu global architecture |
-| [architech/design/API_SERVICE_SYSTEM_DESIGN.md](architech/design/API_SERVICE_SYSTEM_DESIGN.md) | Data platform system design |
+| [architech/design/redis_key_design.md](architech/design/redis_key_design.md) | Redis key design |
 | [tests/CHECKLIST.md](tests/CHECKLIST.md) | Automated test checklist |
 
 ---
@@ -281,14 +235,15 @@ Issues and Pull Requests are welcome.
 
 1. **Branching**: Develop from `main`; feature branches named `feature/your-feature-name`.
 2. **Commit messages**: Write in **Chinese**, following [Conventional Commits](https://www.conventionalcommits.org/).
-3. **Testing**: Update [tests/CHECKLIST.md](tests/CHECKLIST.md) when adding features.
-4. **DB changes**: Add `V{N}-description.sql` under `db-prod/`; migrations must be idempotent.
+3. **Pull Request**: Use [PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md) when opening a PR.
+4. **Testing**: Update [tests/CHECKLIST.md](tests/CHECKLIST.md) when adding features.
+5. **DB changes**: Add `V{N}-description.sql` under `db-prod/`; migrations must be idempotent.
 
 ---
 
 ## 💬 Contact & Community
 
-- **Issues**: Report bugs and feature requests on GitHub / GitLab Issues (public repo URL coming soon).
+- **Issues**: Report bugs and feature requests on [GitHub Issues](https://github.com/RandyChen1985/yunshu-api-data-platform/issues).
 - **Email**: Reach us via Issue comments.
 
 If you have any questions, feature suggestions, or need further technical updates, please scan the QR code to follow our WeChat Official Account:

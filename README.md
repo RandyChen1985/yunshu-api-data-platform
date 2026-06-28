@@ -7,6 +7,8 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg?logo=vue.js&logoColor=white)](https://vuejs.org/) [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![ClickHouse](https://img.shields.io/badge/ClickHouse-Ready-FFCC00.svg?logo=clickhouse&logoColor=black)](https://clickhouse.com/) [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql&logoColor=white)](https://www.mysql.com/) [![Redis](https://img.shields.io/badge/Redis-Active-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+![云枢 · 数据服务平台概览](docs/images/overview.png)
+
 **云枢 · 数据服务平台**是面向企业数据消费场景的一站式 **Data-as-a-Service (DaaS)** 中枢。它将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，为 AI Agent、运营控制台与业务系统提供标准化数据访问能力。
 
 平台核心聚焦于以下能力矩阵：
@@ -22,52 +24,7 @@
 
 ## 🏛️ 系统架构 (Architecture)
 
-```mermaid
-graph TD
-    Client["客户端 / AI Agent / 业务系统"] --> Gateway["API 网关 / Nginx"]
-    Gateway --> API["FastAPI 接入层"]
-
-    subgraph "核心引擎 (Core Engine)"
-        API --> Auth["鉴权 & 限流 (Redis)"]
-        Auth --> Meta["元数据中心 (MetaService)"]
-        Meta --> QueryEngine["查询引擎 (DSL Parser)"]
-        QueryEngine --> Adapter["多源适配器 (Adapter Layer)"]
-    end
-
-    subgraph "存储与运维 (Persistence & Ops)"
-        Adapter --> DB[(MySQL / ClickHouse / Oracle)]
-        API --> Jobs["异步作业 (APScheduler)"]
-        Jobs --> Audit[(按天分表审计日志)]
-        Jobs --> Stats[(分钟级统计汇总)]
-    end
-```
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│                   云枢 · 数据服务平台                     │
-└───────────────┬────────────────────────────┬─────────────┘
-                │                            │
-        [ 对外 Data API ]            [ 管理控制后台 Portal ]
-         /api/v1/query                  (Vue 3 Admin)
-                │                            │
-                └─────────────┬──────────────┘
-                              │ HTTP
-┌─────────────────────────────▼────────────────────────────┐
-│                    核心网关 (FastAPI)                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ 统一鉴权 │  │ 资源路由 │  │ SQL 护栏 │  │ 审计回溯 │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│              多源数据适配层 (Data Adapter Layer)            │
-│     MySQL Adapter  │  ClickHouse Adapter  │  Oracle Adapter │
-└─────────────────────────────┬──────────────────────────────┘
-                              │
-┌─────────────────────────────▼────────────────────────────┐
-│        企业数据源 (MySQL / ClickHouse / Oracle)           │
-└──────────────────────────────────────────────────────────┘
-```
+![云枢 · 数据服务平台技术架构](docs/images/architech.png)
 
 ---
 
@@ -114,7 +71,7 @@ graph TD
 4.  **对外调用**：客户端携带 `X-API-Key` 调用 `/api/v1/query` 或资源直连接口。
 5.  **审计回溯**：所有调用写入按天分表日志，支持 Trace ID 排障。
 
-详见 [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
+详见 [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
 
 ---
 
@@ -123,14 +80,12 @@ graph TD
 | 文档 | 说明 |
 |------|------|
 | [HOW_TO_INSTALL.md](HOW_TO_INSTALL.md) | 安装部署与 FAQ |
-| [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md) | 对外 API 集成指南 |
+| [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) | 对外 API 集成指南 |
 | [docs/guides/getting-started.md](docs/guides/getting-started.md) | 开发者快速入门 |
-| [docs/ORACLE_INTEGRATION_GUIDE.md](docs/ORACLE_INTEGRATION_GUIDE.md) | Oracle 数据源接入 |
-| [docs/sso.md](docs/sso.md) | SSO 单点登录配置 |
+| [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md) | Oracle 数据源接入 |
 | [db-prod/README.md](db-prod/README.md) | 数据库迁移与幂等 apply 工具 |
 | [docker/README.md](docker/README.md) | Docker 构建与部署 |
-| [architech/design/GLOBAL_SYSTEM_OVERVIEW.md](architech/design/GLOBAL_SYSTEM_OVERVIEW.md) | 云枢全局系统架构 |
-| [architech/design/API_SERVICE_SYSTEM_DESIGN.md](architech/design/API_SERVICE_SYSTEM_DESIGN.md) | 数据服务平台系统设计 |
+| [architech/design/redis_key_design.md](architech/design/redis_key_design.md) | Redis Key 设计说明 |
 | [tests/CHECKLIST.md](tests/CHECKLIST.md) | 自动化测试验收清单 |
 
 ---
@@ -280,14 +235,15 @@ cd frontend && npm run dev
 
 1. **分支规范**：基于 `main` 开发，功能分支命名 `feature/your-feature-name`。
 2. **提交信息**：使用 **中文** Commit Message，遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范。
-3. **测试验收**：新增功能请更新 [tests/CHECKLIST.md](tests/CHECKLIST.md)。
-4. **数据库变更**：在 `db-prod/` 新增 `V{N}-description.sql`，确保迁移脚本可幂等重复执行。
+3. **Pull Request**：创建 PR 时请按 [PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md) 填写说明与测试清单。
+4. **测试验收**：新增功能请更新 [tests/CHECKLIST.md](tests/CHECKLIST.md)。
+5. **数据库变更**：在 `db-prod/` 新增 `V{N}-description.sql`，确保迁移脚本可幂等重复执行。
 
 ---
 
 ## 💬 联系与交流
 
-- **Issue**：欢迎在 GitHub / GitLab Issues 中反馈问题与功能建议（开源仓库地址即将公布）。
+- **Issue**：欢迎在 [GitHub Issues](https://github.com/RandyChen1985/yunshu-api-data-platform/issues) 中反馈问题与功能建议。
 - **邮件**：可通过 Issue 留言与我们取得联系。
 
 如果您在使用过程中有任何疑问、功能建议，或者想要获取更多技术资讯，欢迎扫码关注我们的微信公众号：

@@ -29,7 +29,7 @@
 
 *   **MySQL**（建议 8.0+）：必须支持 `utf8mb4` 字符集，用于存放平台系统配置、用户权限、元数据、审计日志等。
 *   **Redis**（建议 6.0+，可选但推荐）：用于缓存、限流与异步任务调度；生产环境建议开启 `REDIS_ENABLE=true`。
-*   **ClickHouse / Oracle**（按需）：作为业务数据源接入，非平台自身运行所必需。Oracle 11g 等低版本需启用 Thick 模式，详见 [docs/ORACLE_INTEGRATION_GUIDE.md](docs/ORACLE_INTEGRATION_GUIDE.md)。
+*   **ClickHouse / Oracle**（按需）：作为业务数据源接入，非平台自身运行所必需。Oracle 11g 等低版本需启用 Thick 模式，详见 [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md)。
 
 ---
 
@@ -105,7 +105,7 @@
 
     *   **途径一：直接下载官方预编译镜像包（推荐，最便捷）**
 
-        前往 GitHub Releases 页面，下载对应版本及适合服务器 CPU 架构（如 `linux-amd64` / `linux-arm64`）的离线 Docker 镜像 tar 包。（开源仓库地址即将公布）
+        前往 [GitHub Releases](https://github.com/RandyChen1985/yunshu-api-data-platform/releases) 页面，下载对应版本及适合服务器 CPU 架构（如 `linux-amd64` / `linux-arm64`）的离线 Docker 镜像 tar 包。
 
     *   **途径二：本地自行编译并导出镜像包（适合二次开发与定制）**
 
@@ -158,7 +158,7 @@
     *   **检查与修改 Docker Compose 编排文件（[docker/docker-compose.api.yml](docker/docker-compose.api.yml)）**：
 
         1.  **镜像版本校准**：YAML 中默认使用 `image: yunshu-api:latest`。若载入的镜像是带具体版本号的（如 `yunshu-api:1.0.0`），需将 YAML 中 `image:` 指向对应标签；或执行 `docker tag yunshu-api:1.0.0 yunshu-api:latest` 免除修改。
-        2.  **Oracle 客户端挂载卷调整（仅当需要直连 Oracle 数据库时）**：根据宿主机 Oracle Instant Client 实际路径，修改 `volumes` 下的挂载目录；若不需要 Oracle，可注释该挂载卷。低版本 Oracle（如 11g）须启用 Thick 模式（`USE_ORACLE_THICK_MODE=1`），详见 [docs/ORACLE_INTEGRATION_GUIDE.md](docs/ORACLE_INTEGRATION_GUIDE.md)。
+        2.  **Oracle 客户端挂载卷调整（仅当需要直连 Oracle 数据库时）**：根据宿主机 Oracle Instant Client 实际路径，修改 `volumes` 下的挂载目录；若不需要 Oracle，可注释该挂载卷。低版本 Oracle（如 11g）须启用 Thick 模式（`USE_ORACLE_THICK_MODE=1`），详见 [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md)。
 
 4.  **一键启动与停止服务**：
 
@@ -230,7 +230,7 @@
     ```
 5.  **安全提示**：默认管理员 API Key 为固定值，首次登录成功后，请尽快在【用户管理】中轮换 API Key 或创建新的管理员账号。
 
-API 调用与认证细节，请参考：[docs/guides/getting-started.md](docs/guides/getting-started.md) · [docs/API_INTEGRATION_GUIDE.md](docs/API_INTEGRATION_GUIDE.md)。
+API 调用与认证细节，请参考：[docs/guides/getting-started.md](docs/guides/getting-started.md) · [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md)。
 
 ---
 
@@ -241,7 +241,7 @@ API 调用与认证细节，请参考：[docs/guides/getting-started.md](docs/gu
 ### 5.1 数据源管理 (Data Sources)
 
 *   在【数据源管理】中添加业务数据库连接（支持 MySQL、ClickHouse、Oracle 等）。
-*   点击「连通性测试」确认连接无误；Oracle 低版本请参考 [docs/ORACLE_INTEGRATION_GUIDE.md](docs/ORACLE_INTEGRATION_GUIDE.md) 配置 Thick 模式。
+*   点击「连通性测试」确认连接无误；Oracle 低版本请参考 [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md) 配置 Thick 模式。
 
 ### 5.2 元数据与 API 资源 (Metadata & Resources)
 
@@ -255,7 +255,7 @@ API 调用与认证细节，请参考：[docs/guides/getting-started.md](docs/gu
 
 ### 5.4 SSO 单点登录（可选）
 
-*   若需对接企业统一认证，请参考 [docs/sso.md](docs/sso.md) 配置 `SSO_API_URL` 等环境变量。
+*   若需对接企业统一认证，请在 `.env` 中配置 `SSO_API_URL`、`SSO_ACCESS_TOKEN` 等环境变量。
 
 ---
 
