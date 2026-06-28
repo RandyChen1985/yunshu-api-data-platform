@@ -1,0 +1,4 @@
+- [x] Backend: Prevent deletion of `admin` user in `delete_user` endpoint <!-- id: 0 -->
+- [x] Frontend: Hide/Disable Delete button for `admin` user in `Users.vue` <!-- id: 1 -->
+- [x] Verification: Manual test - Try to delete admin via API (should fail) <!-- id: 2 -->
+- [x] Verification: Manual test - Try to delete admin via UI (button should be disabled) <!-- id: 3 -->

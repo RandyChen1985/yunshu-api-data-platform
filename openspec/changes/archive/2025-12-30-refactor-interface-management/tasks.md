@@ -1,0 +1,10 @@
+- [x] Update Page Title in `ResourceList.vue` <!-- id: 0 -->
+- [x] Add Status Filter in `ResourceList.vue` <!-- id: 1 -->
+- [x] Implement Tooltip for Resource Name in `ResourceList.vue` <!-- id: 2 -->
+- [x] Update `Resource` interface to include `remarks` <!-- id: 3 -->
+- [x] Implement JSON Export for single resource in `ResourceList.vue` <!-- id: 7 -->
+- [x] Implement Import Button & File Handler in `ResourceList.vue` <!-- id: 8 -->
+- [x] Implement "Create from Data" logic in `ResourceEdit.vue` <!-- id: 9 -->
+- [x] Update Data Type Input to Select in `ResourceEdit.vue` <!-- id: 4 -->
+- [x] Implement Data Type Normalization Logic (Import) <!-- id: 5 -->
+- [x] Verify Frontend Changes <!-- id: 6 -->

@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+.gemini
+.agent
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+.tox/
+
+# Environment
+.env
+.env.*
+!env.example
+
+# Frontend source (ONLY exclude node_modules and dist)
+# Crucial: package.json and src MUST NOT be ignored for Docker build
+frontend/node_modules
+frontend/dist
+
+# Docs and metadata (safe to ignore)
+architech/
+openspec/
+AGENTS.md
+
+# Logs
+*.log
+logs/

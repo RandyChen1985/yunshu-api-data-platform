@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis/redis-stack:latest
+    container_name: redis-stack-server
+    restart: always
+    ports:
+      - "6879:6379"
+      - "8002:8001"
+    volumes:
+      # 映射数据目录
+      - /Users/chenxiaolong/docker-help/redis-stack/data:/data
+    # 启动命令：开启 AOF 持久化（更安全），并设置密码
+    environment:
+      - REDIS_ARGS=--appendonly yes --requirepass root123
