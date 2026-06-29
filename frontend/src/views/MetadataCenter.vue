@@ -260,9 +260,27 @@ const stats = computed(() => {
   const total = datasets.value.length
   const active = datasets.value.filter((d) => d.status === 1).length
   const synced = datasets.value.filter((d) => d.vector_status === 1).length
-  const pending = datasets.value.filter((d) => (d.vector_status ?? 0) === 4 || (d.vector_status ?? 0) === 0).length
+  const pending = datasets.value.filter((d) => [0, 3, 4].includes(d.vector_status ?? 0)).length
   return { total, active, synced, pending }
 })
+
+/** 需要向量同步的数据集：已启用且未同步 / 失败 / 待更新 */
+const datasetsNeedingVectorSync = computed(() =>
+  datasets.value.filter(
+    (d) => d.status === 1 && [0, 3, 4].includes(d.vector_status ?? 0)
+  )
+)
+
+const bulkSyncing = ref(false)
+
+const canBulkSync = computed(
+  () =>
+    canManage.value &&
+    isAiEnabled.value &&
+    isVectorSupported.value &&
+    datasetsNeedingVectorSync.value.length > 0 &&
+    !bulkSyncing.value
+)
 
 const openConfirm = (opts: {
   title: string
@@ -312,12 +330,69 @@ const handleSyncVector = async (ds: Dataset) => {
     ds.vector_status = 2 // 立即切换为同步中状态
     await metadataV2Api.syncVector(ds.id)
     showToast(`数据集 ${ds.display_name} 向量化同步任务已启动`, 'success')
-    // 实际同步通常是异步的，这里简单的重查一次
+    checkAndStartPolling()
     setTimeout(fetchDatasets, 1500)
   } catch (e) {
     showToast('同步启动失败', 'error')
     ds.vector_status = 3
   }
+}
+
+const runBulkVectorSync = async () => {
+  const targets = datasetsNeedingVectorSync.value
+  if (targets.length === 0) return
+
+  bulkSyncing.value = true
+  let ok = 0
+  let fail = 0
+  for (const ds of targets) {
+    try {
+      ds.vector_status = 2
+      await metadataV2Api.syncVector(ds.id)
+      ok++
+    } catch {
+      ds.vector_status = 3
+      fail++
+    }
+  }
+  bulkSyncing.value = false
+  checkAndStartPolling()
+  setTimeout(fetchDatasets, 1500)
+
+  if (fail === 0) {
+    showToast(`已为 ${ok} 个数据集启动向量同步`, 'success')
+  } else if (ok === 0) {
+    showToast(`${fail} 个数据集同步启动失败`, 'error')
+  } else {
+    showToast(`已启动 ${ok} 个，${fail} 个失败`, 'warning')
+  }
+}
+
+const handleSyncAllPending = () => {
+  if (!isAiEnabled.value) {
+    showToast('AI 功能未开启，无法同步', 'warning')
+    return
+  }
+  if (!isVectorSupported.value) {
+    showToast('Redis 不支持向量搜索，无法同步', 'error')
+    return
+  }
+  const targets = datasetsNeedingVectorSync.value
+  if (targets.length === 0) {
+    showToast('没有需要同步的数据集', 'info')
+    return
+  }
+
+  openConfirm({
+    title: '一键同步向量',
+    message: `将为 ${targets.length} 个已启用数据集启动向量同步（含未同步、待更新、同步失败）。任务在后台执行，请稍后刷新查看状态。`,
+    type: 'info',
+    confirmText: '开始同步',
+    onConfirm: () => {
+      confirmDialog.value.show = false
+      runBulkVectorSync()
+    },
+  })
 }
 
 const getDatasetEmoji = (name: string) => {
@@ -458,9 +533,25 @@ onUnmounted(stopPolling)
         <p class="text-xs text-emerald-700">向量已同步</p>
         <p class="text-2xl font-bold text-emerald-700">{{ stats.synced }}</p>
       </div>
-      <div class="bg-white border border-amber-200 rounded-lg px-4 py-3">
-        <p class="text-xs text-amber-700">待同步/待更新</p>
-        <p class="text-2xl font-bold text-amber-700">{{ stats.pending }}</p>
+      <div class="bg-white border border-amber-200 rounded-lg px-4 py-3 bg-amber-50/30">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="text-xs text-amber-700">待同步/待更新</p>
+            <p class="text-2xl font-bold text-amber-700">{{ stats.pending }}</p>
+          </div>
+          <button
+            v-if="canManage && datasetsNeedingVectorSync.length > 0"
+            type="button"
+            class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :class="canBulkSync ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'"
+            :disabled="!canBulkSync"
+            :title="!isAiEnabled ? 'AI 未开启' : !isVectorSupported ? '向量库不可用' : '同步所有待处理数据集'"
+            @click="handleSyncAllPending"
+          >
+            <CloudArrowUpIcon class="w-3.5 h-3.5" :class="bulkSyncing ? 'animate-pulse' : ''" />
+            {{ bulkSyncing ? '同步中...' : '一键同步' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -495,6 +586,17 @@ onUnmounted(stopPolling)
             <option value="ALL">全部数据源</option>
             <option v-for="ds in dataSourceOptions" :key="ds" :value="ds">{{ ds }}</option>
           </select>
+          <button
+            v-if="canManage && datasetsNeedingVectorSync.length > 0"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+            :class="canBulkSync ? 'border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100' : 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed'"
+            :disabled="!canBulkSync"
+            @click="handleSyncAllPending"
+          >
+            <CloudArrowUpIcon class="w-4 h-4" />
+            {{ bulkSyncing ? '批量同步中...' : `一键同步 (${datasetsNeedingVectorSync.length})` }}
+          </button>
           <p v-if="hasActiveFilters" class="text-xs text-gray-400 whitespace-nowrap">
             {{ filteredDatasets.length }} / {{ datasets.length }} 项
           </p>
