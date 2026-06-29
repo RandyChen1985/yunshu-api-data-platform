@@ -54,9 +54,8 @@ class CatalogService:
                     SELECT endpoint, SUM(total_calls) AS total
                     FROM api_access_stats_1m
                     WHERE time_bucket >= %s
-                      AND user_name = 'ALL'
+                      AND user_name != 'ALL'
                       AND endpoint LIKE '/api/v1/resources/%%'
-                      AND endpoint != 'ALL'
                     GROUP BY endpoint
                     """,
                     (since,),
@@ -82,7 +81,7 @@ class CatalogService:
                     sql = f"""
                         SELECT DATE(time_bucket) AS day_key, SUM(total_calls) AS total
                         FROM api_access_stats_1m
-                        WHERE time_bucket >= %s AND user_name = 'ALL'
+                        WHERE time_bucket >= %s AND user_name != 'ALL'
                           AND endpoint IN ({placeholders})
                         GROUP BY day_key ORDER BY day_key
                     """
@@ -230,6 +229,8 @@ class CatalogService:
         if row.get("data_source") and row["data_source"] not in tags:
             tags = list(dict.fromkeys(tags + [row["data_source"]]))
         keys_for_access = resource_keys if resource_keys is not None else ([resource_key] if resource_key else [])
+        keys_for_calls = keys_for_access
+        calls = sum(call_stats.get(k, 0) for k in keys_for_calls)
         return {
             "id": row["id"],
             "product_key": row["product_key"],
@@ -246,7 +247,7 @@ class CatalogService:
             "data_source": row.get("data_source"),
             "resource_mode": row.get("resource_mode"),
             "health_score": row.get("health_score"),
-            "calls_7d": call_stats.get(resource_key or "", 0),
+            "calls_7d": calls,
             "has_access": cls._product_has_access(keys_for_access, accessible),
             "published_at": row.get("published_at"),
             "updated_at": row.get("updated_at"),
@@ -706,9 +707,19 @@ class CatalogService:
         call_stats = await cls._get_resource_call_stats(days)
         rows = await cls._fetch_product_rows(status=STATUS_PUBLISHED)
         accessible: Set[str] = set()
+        keys_map = await cls._get_resource_keys_by_product_ids([r["id"] for r in rows])
+        catalog_resource_keys: Set[str] = set()
 
-        products = [cls._row_to_list_item(r, call_stats, accessible) for r in rows]
-        total_calls = sum(call_stats.values())
+        products = []
+        for r in rows:
+            rkeys = keys_map.get(r["id"])
+            if not rkeys:
+                fallback = r.get("primary_resource_key") or r.get("product_key")
+                rkeys = [fallback] if fallback else []
+            catalog_resource_keys.update(rkeys)
+            products.append(cls._row_to_list_item(r, call_stats, accessible, resource_keys=rkeys))
+
+        total_calls = sum(p["calls_7d"] for p in products)
 
         domain_dist: Dict[str, int] = {}
         ds_types: Dict[str, int] = {}
@@ -756,7 +767,9 @@ class CatalogService:
         )
 
         top_products = sorted(products, key=lambda x: x["calls_7d"], reverse=True)[:10]
-        calls_trend = await cls._get_calls_trend(days)
+        calls_trend = await cls._get_calls_trend(
+            days, sorted(catalog_resource_keys) if catalog_resource_keys else None
+        )
 
         return {
             "period_days": days,
