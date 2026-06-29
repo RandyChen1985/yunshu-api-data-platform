@@ -12,6 +12,15 @@ logger = logging.getLogger(__name__)
 class MetaService:
     CACHE_KEY_PREFIX = "yunshu:meta:config:"
     CACHE_TTL = 3600 # 1 hour
+    SYSTEM_RESOURCE_GROUP = "System"
+
+    @classmethod
+    def _assert_assignable_resource_group(cls, resource_group: str, resource_key: Optional[str] = None) -> None:
+        if resource_group.strip().lower() != cls.SYSTEM_RESOURCE_GROUP.lower():
+            return
+        if resource_key and resource_key.startswith('system.'):
+            return
+        raise ValueError("'System' 分组为系统内置，不可用于普通资源")
 
     @classmethod
     async def get_config(cls, resource_key: str) -> Optional[ResourceResponse]:
@@ -118,6 +127,7 @@ class MetaService:
 
     @classmethod
     async def create_resource(cls, resource: ResourceCreate) -> ResourceResponse:
+        cls._assert_assignable_resource_group(resource.resource_group)
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(
@@ -131,6 +141,8 @@ class MetaService:
     async def update_resource(cls, resource_key: str, update_data: ResourceUpdate) -> Optional[ResourceResponse]:
         update_dict = update_data.dict(exclude_unset=True)
         if not update_dict: return await cls.get_config(resource_key)
+        if 'resource_group' in update_dict:
+            cls._assert_assignable_resource_group(update_dict['resource_group'], resource_key)
         set_clauses = []; values = []
         for k, v in update_dict.items():
             if k in ('fields_config', 'allowed_filters'): v = json.dumps(v)
@@ -154,9 +166,83 @@ class MetaService:
                 return False
 
     @staticmethod
-    async def get_tables(data_source: str = "default_clickhouse") -> List[str]:
+    async def get_tables(data_source: str = "default_clickhouse") -> List[Dict[str, str]]:
         from app.services.data_adapter.factory import get_adapter
         return await (await get_adapter(data_source)).get_tables()
+
+    @staticmethod
+    async def enrich_tables_with_metadata(data_source: str, tables: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Merge meta_tables.term into table list for UI display."""
+        if not tables:
+            return tables
+        term_map: Dict[str, str] = {}
+        try:
+            async with get_db_connection() as conn:
+                import aiomysql
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute(
+                        """
+                        SELECT t.physical_name, t.term
+                        FROM meta_tables t
+                        JOIN meta_datasets d ON t.dataset_id = d.id
+                        WHERE d.data_source = %s AND t.term IS NOT NULL AND t.term != ''
+                        """,
+                        (data_source,),
+                    )
+                    for row in await cursor.fetchall():
+                        term_map[row["physical_name"].lower()] = row["term"]
+        except Exception as e:
+            logger.warning("Failed to enrich tables with metadata terms: %s", e)
+            return tables
+
+        enriched: List[Dict[str, str]] = []
+        for table in tables:
+            entry = dict(table)
+            term = term_map.get(entry["name"].lower())
+            if term:
+                entry["term"] = term
+            enriched.append(entry)
+        return enriched
+
+    @staticmethod
+    async def enrich_columns_with_metadata(
+        data_source: str,
+        table_name: Optional[str],
+        columns: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        """Merge meta_columns.term into column list; metadata term overrides DB comment."""
+        if not table_name or not columns:
+            return columns
+        term_map: Dict[str, str] = {}
+        try:
+            async with get_db_connection() as conn:
+                import aiomysql
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute(
+                        """
+                        SELECT c.physical_name, c.term
+                        FROM meta_columns c
+                        JOIN meta_tables t ON c.table_id = t.id
+                        JOIN meta_datasets d ON t.dataset_id = d.id
+                        WHERE d.data_source = %s AND t.physical_name = %s
+                          AND c.term IS NOT NULL AND c.term != ''
+                        """,
+                        (data_source, table_name),
+                    )
+                    for row in await cursor.fetchall():
+                        term_map[row["physical_name"].lower()] = row["term"]
+        except Exception as e:
+            logger.warning("Failed to enrich columns with metadata terms: %s", e)
+            return columns
+
+        enriched: List[Dict[str, str]] = []
+        for column in columns:
+            entry = dict(column)
+            term = term_map.get(entry["name"].lower())
+            if term:
+                entry["comment"] = term
+            enriched.append(entry)
+        return enriched
 
     @staticmethod
     async def get_columns(data_source: str, table_name: Optional[str] = None, custom_sql: Optional[str] = None, params: Optional[dict] = None) -> List[Dict[str, str]]:

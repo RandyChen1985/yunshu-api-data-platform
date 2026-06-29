@@ -1,5 +1,6 @@
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
+from app.schemas.resource import validate_user_resource_group
 
 class PreviewRequest(BaseModel):
     source_id: int
@@ -21,6 +22,10 @@ class PublishRequest(BaseModel):
     status: int = 1
     cache_ttl: int = 0
     remarks: Optional[str] = None
+
+    @validator('resource_group')
+    def validate_group_not_system(cls, v):
+        return validate_user_resource_group(v)
 
 class AIRequest(BaseModel):
 

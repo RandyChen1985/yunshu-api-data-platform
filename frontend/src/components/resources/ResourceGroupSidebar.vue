@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { FolderIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon } from '@heroicons/vue/24/outline'
+import { FolderIcon, Cog6ToothIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon } from '@heroicons/vue/24/outline'
+import type { ResourceGroupTab } from '@/types/resource'
 
 defineProps<{
   collapsed: boolean
   searchGroupQuery: string
-  tabs: { name: string; label: string; count: number }[]
+  tabs: ResourceGroupTab[]
   activeTab: string
 }>()
 
@@ -60,14 +61,22 @@ const emit = defineEmits<{
         :key="tab.name"
         class="w-full flex items-center rounded-md transition-all duration-200 group relative"
         :class="[
-          activeTab === tab.name ? 'bg-white text-blue-600 shadow-sm ring-1 ring-gray-200' : 'text-gray-600 hover:bg-white hover:shadow-sm',
+          activeTab === tab.name
+            ? (tab.isSystem ? 'bg-amber-50 text-amber-800 shadow-sm ring-1 ring-amber-200' : 'bg-white text-blue-600 shadow-sm ring-1 ring-gray-200')
+            : 'text-gray-600 hover:bg-white hover:shadow-sm',
           collapsed ? 'justify-center py-2' : 'justify-between px-3 py-2',
         ]"
         :title="collapsed ? tab.label : ''"
         @click="emit('update:activeTab', tab.name)"
       >
         <div class="flex items-center overflow-hidden">
+          <Cog6ToothIcon
+            v-if="tab.isSystem"
+            class="w-4 h-4 shrink-0"
+            :class="[activeTab === tab.name ? 'text-amber-600' : 'text-amber-500', collapsed ? '' : 'mr-3']"
+          />
           <FolderIcon
+            v-else
             class="w-4 h-4 shrink-0"
             :class="[activeTab === tab.name ? 'text-blue-500' : 'text-gray-400', collapsed ? '' : 'mr-3']"
           />
@@ -76,7 +85,9 @@ const emit = defineEmits<{
         <span
           v-if="!collapsed"
           class="ml-2 py-0.5 px-1.5 rounded text-[10px] font-bold"
-          :class="activeTab === tab.name ? 'bg-blue-50 text-blue-600' : 'bg-gray-200 text-gray-500'"
+          :class="tab.isSystem
+            ? (activeTab === tab.name ? 'bg-amber-50 text-amber-700' : 'bg-amber-100 text-amber-700')
+            : (activeTab === tab.name ? 'bg-blue-50 text-blue-600' : 'bg-gray-200 text-gray-500')"
         >
           {{ tab.count }}
         </span>

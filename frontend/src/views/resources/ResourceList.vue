@@ -9,7 +9,8 @@ import ResourceRowActions from '@/components/resources/ResourceRowActions.vue'
 import ResourceLogDrawer from '@/components/resources/ResourceLogDrawer.vue'
 import ConfirmDeleteModal from '@/components/resources/ConfirmDeleteModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import type { Resource, AccessLog, ResourceSortField } from '@/types/resource'
+import type { Resource, AccessLog, ResourceSortField, ResourceGroupTab } from '@/types/resource'
+import { isSystemResourceGroup, sortResourceGroups } from '@/types/resource'
 import { CircleStackIcon, ShieldCheckIcon } from '@heroicons/vue/24/outline'
 import { Codemirror } from 'vue-codemirror'
 import { sql } from '@codemirror/lang-sql'
@@ -77,13 +78,18 @@ const fetchResources = async () => {
   }
 }
 
-const groupTabs = computed(() => {
+const groupTabs = computed((): ResourceGroupTab[] => {
   const counts: Record<string, number> = {}
   resources.value.forEach((r) => {
     const g = r.resource_group || '默认分组'
     counts[g] = (counts[g] || 0) + 1
   })
-  const tabs = Object.keys(counts).sort().map((g) => ({ name: g, label: g, count: counts[g] ?? 0 }))
+  const tabs = sortResourceGroups(Object.keys(counts)).map((g) => ({
+    name: g,
+    label: g,
+    count: counts[g] ?? 0,
+    isSystem: isSystemResourceGroup(g),
+  }))
   return [{ name: 'ALL', label: '全部资源', count: resources.value.length }, ...tabs]
 })
 
@@ -699,9 +705,21 @@ onMounted(() => {
                     </div>
                   </td>
                   <td class="px-3 py-3 whitespace-nowrap">
-                    <span class="text-xs text-gray-600 tabular-nums">
-                      {{ Array.isArray(res.fields_config) ? res.fields_config.length : 0 }}字段 · {{ Array.isArray(res.allowed_filters) ? res.allowed_filters.length : 0 }}过滤
-                    </span>
+                    <div class="inline-flex items-center gap-1 text-xs text-gray-500">
+                      <span class="inline-flex items-center gap-1">
+                        <span class="inline-flex items-center justify-center min-w-[1.125rem] h-5 px-1.5 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold tabular-nums border border-blue-100">
+                          {{ Array.isArray(res.fields_config) ? res.fields_config.length : 0 }}
+                        </span>
+                        字段
+                      </span>
+                      <span class="text-gray-300 select-none">·</span>
+                      <span class="inline-flex items-center gap-1">
+                        <span class="inline-flex items-center justify-center min-w-[1.125rem] h-5 px-1.5 rounded-full bg-violet-50 text-violet-700 text-[11px] font-semibold tabular-nums border border-violet-100">
+                          {{ Array.isArray(res.allowed_filters) ? res.allowed_filters.length : 0 }}
+                        </span>
+                        过滤
+                      </span>
+                    </div>
                   </td>
                   <td class="px-3 py-3 text-xs text-gray-500 truncate hidden xl:table-cell" :title="res.remarks || ''">
                     {{ res.remarks || '—' }}

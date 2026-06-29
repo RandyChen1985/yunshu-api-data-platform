@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import {
   DocumentMagnifyingGlassIcon,
   CommandLineIcon,
@@ -27,17 +27,62 @@ const emit = defineEmits<{
   copyApi: [type: 'resource' | 'query']
 }>()
 
-const menuOpen = ref(false)
-const menuRef = ref<HTMLElement | null>(null)
+const MENU_WIDTH = 176
+const VIEWPORT_PADDING = 8
 
-const closeOnOutside = (e: MouseEvent) => {
-  if (menuRef.value && !menuRef.value.contains(e.target as Node)) {
-    menuOpen.value = false
+const menuOpen = ref(false)
+const triggerRef = ref<HTMLElement | null>(null)
+const dropdownRef = ref<HTMLElement | null>(null)
+const menuStyle = ref({ top: '0px', left: '0px' })
+
+const updateMenuPosition = () => {
+  const trigger = triggerRef.value
+  if (!trigger) return
+
+  const rect = trigger.getBoundingClientRect()
+  const menuHeight = dropdownRef.value?.offsetHeight ?? 240
+
+  let top = rect.bottom + 4
+  let left = rect.right - MENU_WIDTH
+
+  if (top + menuHeight > window.innerHeight - VIEWPORT_PADDING) {
+    top = rect.top - menuHeight - 4
   }
+  top = Math.max(VIEWPORT_PADDING, top)
+  left = Math.max(VIEWPORT_PADDING, Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_PADDING))
+
+  menuStyle.value = { top: `${top}px`, left: `${left}px` }
 }
 
-onMounted(() => document.addEventListener('click', closeOnOutside))
-onUnmounted(() => document.removeEventListener('click', closeOnOutside))
+watch(menuOpen, async (open) => {
+  if (!open) return
+  await nextTick()
+  updateMenuPosition()
+  await nextTick()
+  updateMenuPosition()
+})
+
+const closeOnOutside = (e: MouseEvent) => {
+  const target = e.target as Node
+  if (triggerRef.value?.contains(target)) return
+  if (dropdownRef.value?.contains(target)) return
+  menuOpen.value = false
+}
+
+const onScrollOrResize = () => {
+  if (menuOpen.value) updateMenuPosition()
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeOnOutside)
+  window.addEventListener('scroll', onScrollOrResize, true)
+  window.addEventListener('resize', onScrollOrResize)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeOnOutside)
+  window.removeEventListener('scroll', onScrollOrResize, true)
+  window.removeEventListener('resize', onScrollOrResize)
+})
 
 const isSystemSql = props.resource.resource_key === 'system.sql.execute'
 </script>
@@ -80,50 +125,55 @@ const isSystemSql = props.resource.resource_key === 'system.sql.execute'
       </button>
     </template>
 
-    <div ref="menuRef" class="relative">
+    <div class="relative">
       <button
+        ref="triggerRef"
         class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
         aria-label="更多操作"
         @click.stop="menuOpen = !menuOpen"
       >
         <EllipsisVerticalIcon class="w-4 h-4" />
       </button>
-      <div
-        v-if="menuOpen"
-        class="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 text-sm"
-      >
-        <button class="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" @click="emit('logs'); menuOpen = false">
-          <DocumentMagnifyingGlassIcon class="w-4 h-4 text-gray-400" /> 调用日志
-        </button>
-        <button
-          v-if="resource.resource_mode === 'SQL'"
-          class="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
-          @click="emit('previewSql'); menuOpen = false"
+      <Teleport to="body">
+        <div
+          v-if="menuOpen"
+          ref="dropdownRef"
+          class="fixed w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-[200] py-1 text-sm"
+          :style="menuStyle"
         >
-          <CommandLineIcon class="w-4 h-4 text-gray-400" /> 预览 SQL
-        </button>
-        <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="emit('copyApi', 'resource'); menuOpen = false">
-          复制资源接口 URL
-        </button>
-        <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="emit('copyApi', 'query'); menuOpen = false">
-          复制通用 Query URL
-        </button>
-        <button
-          v-if="canExport"
-          class="w-full text-left px-3 py-2 hover:bg-gray-50"
-          @click="emit('export'); menuOpen = false"
-        >
-          导出配置 JSON
-        </button>
-        <hr v-if="canDelete && resource.resource_mode !== 'SYSTEM'" class="my-1 border-gray-100" />
-        <button
-          v-if="canDelete && resource.resource_mode !== 'SYSTEM'"
-          class="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600"
-          @click="emit('delete'); menuOpen = false"
-        >
-          删除资源
-        </button>
-      </div>
+          <button class="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" @click="emit('logs'); menuOpen = false">
+            <DocumentMagnifyingGlassIcon class="w-4 h-4 text-gray-400" /> 调用日志
+          </button>
+          <button
+            v-if="resource.resource_mode === 'SQL'"
+            class="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
+            @click="emit('previewSql'); menuOpen = false"
+          >
+            <CommandLineIcon class="w-4 h-4 text-gray-400" /> 预览 SQL
+          </button>
+          <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="emit('copyApi', 'resource'); menuOpen = false">
+            复制资源接口 URL
+          </button>
+          <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="emit('copyApi', 'query'); menuOpen = false">
+            复制通用 Query URL
+          </button>
+          <button
+            v-if="canExport"
+            class="w-full text-left px-3 py-2 hover:bg-gray-50"
+            @click="emit('export'); menuOpen = false"
+          >
+            导出配置 JSON
+          </button>
+          <hr v-if="canDelete && resource.resource_mode !== 'SYSTEM'" class="my-1 border-gray-100" />
+          <button
+            v-if="canDelete && resource.resource_mode !== 'SYSTEM'"
+            class="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600"
+            @click="emit('delete'); menuOpen = false"
+          >
+            删除资源
+          </button>
+        </div>
+      </Teleport>
     </div>
   </div>
 </template>

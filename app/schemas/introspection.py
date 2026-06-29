@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class TableDefinition(BaseModel):
     name: str
     type: str  # 'TABLE' or 'VIEW'
+    term: Optional[str] = None  # 元数据中心登记的业务术语（中文名）
 
 class TableListResponse(BaseModel):
     tables: Union[List[str], List[TableDefinition]]

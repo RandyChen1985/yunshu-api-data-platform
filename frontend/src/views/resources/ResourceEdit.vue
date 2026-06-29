@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, shallowRef } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, onMounted, computed, shallowRef, watch } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import axios from '../../utils/axios'
 import Toast from '../../components/Toast.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import TablePicker from '@/components/resources/TablePicker.vue'
+import ColumnPicker from '@/components/resources/ColumnPicker.vue'
 import { Codemirror } from 'vue-codemirror'
 import { sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
+import { isSystemResourceGroup, sortResourceGroups, SYSTEM_RESOURCE_GROUP } from '@/types/resource'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +19,22 @@ const resourceKeyParam = route.params.key as string
 const loading = ref(false)
 const saving = ref(false)
 const isAdmin = ref(false)
+const showAdvanced = ref(false)
+const fieldConfigTab = ref<'fields' | 'filters'>('fields')
+const groupPickerValue = ref('')
+const showValidationBanner = ref(false)
+const hasSavedOnce = ref(false)
+const initialFormSnapshot = ref('')
+const pendingRouteNext = ref<((v?: boolean) => void) | null>(null)
+
+const confirmDialog = ref({
+  show: false,
+  title: '',
+  message: '',
+  type: 'warning' as 'danger' | 'warning' | 'info',
+  confirmText: '确认',
+  onConfirm: () => {},
+})
 
 // Check user role
 const userInfo = ref<any>(null)
@@ -79,6 +99,9 @@ const fetchResource = async () => {
             // Ensure array structure for config fields
             if (!Array.isArray(form.value.fields_config)) form.value.fields_config = []
             if (!Array.isArray(form.value.allowed_filters)) form.value.allowed_filters = []
+            syncGroupPickerFromForm()
+            hasSavedOnce.value = true
+            snapshotForm()
             
             // Populate Introspection Data if possible
             if (form.value.data_source) {
@@ -122,8 +145,32 @@ onMounted(() => {
              if (Array.isArray(form.value.allowed_filters)) {
                form.value.allowed_filters.forEach(f => f.type = normalizeType(f.type))
             }
+            syncGroupPickerFromForm()
+            snapshotForm()
+        } else {
+            snapshotForm()
         }
     }
+})
+
+onBeforeRouteLeave((_to, _from, next) => {
+    if (!isDirty.value) {
+        next()
+        return
+    }
+    pendingRouteNext.value = next
+    openConfirm({
+        title: '未保存的更改',
+        message: '离开页面将丢失未保存的修改，确定离开吗？',
+        type: 'warning',
+        confirmText: '离开',
+        onConfirm: () => {
+            confirmDialog.value.show = false
+            pendingRouteNext.value?.(true)
+            pendingRouteNext.value = null
+        },
+    })
+    next(false)
 })
 
 // Introspection State
@@ -133,18 +180,175 @@ const analyzing = ref(false)
 const availableDataSources = ref<any[]>([])
 const existingGroups = ref<string[]>([])
 
+const selectableGroups = computed(() =>
+  existingGroups.value.filter((g) => !isSystemResourceGroup(g))
+)
+
+const isBuiltinSystemResource = computed(
+  () => form.value.resource_mode === 'SYSTEM' || form.value.resource_key.startsWith('system.')
+)
+
 // Fetch Existing Groups
 const fetchGroups = async () => {
     try {
         const res = await axios.get('/api/portal/meta/resources')
         const groups = new Set<string>()
         res.data.forEach((r: any) => {
-            if (r.resource_group) groups.add(r.resource_group)
+            if (r.resource_group && !isSystemResourceGroup(r.resource_group)) groups.add(r.resource_group)
         })
-        existingGroups.value = Array.from(groups).sort()
+        existingGroups.value = sortResourceGroups(Array.from(groups))
     } catch (e) {
         console.error("Failed to fetch groups", e)
     }
+}
+
+const normalizeResourceGroup = () => {
+    if (isBuiltinSystemResource.value) return true
+    const trimmed = (form.value.resource_group || '').trim()
+    if (isSystemResourceGroup(trimmed)) {
+        form.value.resource_group = ''
+        groupPickerValue.value = ''
+        showToast(`${SYSTEM_RESOURCE_GROUP} 为系统内置分组，不可用于普通资源`, 'warning')
+        return false
+    }
+    form.value.resource_group = trimmed
+    return true
+}
+
+const snapshotForm = () => {
+    initialFormSnapshot.value = JSON.stringify(form.value)
+}
+
+const isDirty = computed(() => {
+    if (!initialFormSnapshot.value) return false
+    return JSON.stringify(form.value) !== initialFormSnapshot.value
+})
+
+const keyError = computed(() => {
+    if (isEdit.value) return ''
+    const k = form.value.resource_key.trim()
+    if (!k) return '请输入资源标识'
+    if (!/^[a-z][a-z0-9_.]*$/.test(k)) return '仅支持小写字母、数字、点号与下划线，且以小写字母开头'
+    return ''
+})
+
+const validationIssues = computed(() => {
+    const issues: { id: string; label: string }[] = []
+    if (keyError.value) issues.push({ id: 'basic', label: keyError.value })
+    if (!form.value.resource_name.trim()) issues.push({ id: 'basic', label: '请填写资源名称' })
+    if (!form.value.data_source) issues.push({ id: 'basic', label: '请选择数据源' })
+    if (!isBuiltinSystemResource.value && !form.value.resource_group.trim()) {
+        issues.push({ id: 'basic', label: '请选择或输入分组' })
+    }
+    if (form.value.resource_mode === 'TABLE' && !form.value.table_name) {
+        issues.push({ id: 'source', label: '请选择数据表' })
+    }
+    if (form.value.resource_mode === 'SQL' && !form.value.custom_sql.trim()) {
+        issues.push({ id: 'source', label: '请填写自定义 SQL' })
+    }
+    if (form.value.fields_config.length === 0) {
+        issues.push({ id: 'fields', label: '请至少配置 1 个返回字段' })
+    }
+    if (!form.value.default_sort) {
+        issues.push({ id: 'sort', label: '请选择默认排序字段' })
+    }
+    return issues
+})
+
+const wizardSteps = computed(() => [
+    {
+        id: 'basic',
+        label: '基础信息',
+        done: !!(
+            form.value.resource_key &&
+            form.value.resource_name &&
+            form.value.data_source &&
+            (form.value.resource_group || isBuiltinSystemResource.value)
+        ),
+    },
+    {
+        id: 'source',
+        label: '数据映射',
+        done: form.value.resource_mode === 'TABLE'
+            ? !!form.value.table_name
+            : !!form.value.custom_sql.trim(),
+    },
+    { id: 'fields', label: '字段配置', done: form.value.fields_config.length > 0 },
+    { id: 'sort', label: '排序保存', done: !!form.value.default_sort },
+])
+
+const canUseTestTab = computed(() => isEdit.value || hasSavedOnce.value)
+
+const saveButtonLabel = computed(() => {
+    if (saving.value) return '正在保存...'
+    return isEdit.value ? '保存更改' : '创建资源'
+})
+
+const openConfirm = (opts: {
+    title: string
+    message: string
+    type?: 'danger' | 'warning' | 'info'
+    confirmText?: string
+    onConfirm: () => void
+}) => {
+    confirmDialog.value = {
+        show: true,
+        title: opts.title,
+        message: opts.message,
+        type: opts.type || 'warning',
+        confirmText: opts.confirmText || '确认',
+        onConfirm: opts.onConfirm,
+    }
+}
+
+const scrollToSection = (id: string) => {
+    document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const onGroupPickerChange = () => {
+    if (groupPickerValue.value === '__new__') {
+        form.value.resource_group = ''
+        return
+    }
+    form.value.resource_group = groupPickerValue.value
+}
+
+const syncGroupPickerFromForm = () => {
+    const g = (form.value.resource_group || '').trim()
+    if (!g) {
+        groupPickerValue.value = ''
+        return
+    }
+    if (selectableGroups.value.includes(g)) {
+        groupPickerValue.value = g
+    } else {
+        groupPickerValue.value = '__new__'
+    }
+}
+
+const goBack = () => {
+    if (isDirty.value) {
+        openConfirm({
+            title: '未保存的更改',
+            message: '离开将丢失未保存的修改，确定离开吗？',
+            type: 'warning',
+            confirmText: '离开',
+            onConfirm: () => {
+                confirmDialog.value.show = false
+                router.back()
+            },
+        })
+        return
+    }
+    router.back()
+}
+
+const switchToTestTab = () => {
+    if (!canUseTestTab.value) {
+        showToast('请先保存资源后再进行测试', 'warning')
+        return
+    }
+    activeTab.value = 'test'
 }
 
 // Fetch Data Sources
@@ -165,6 +369,7 @@ const showImportDialog = ref(false)
 const importTarget = ref<'fields_config' | 'allowed_filters'>('fields_config')
 const selectedColumnNames = ref<string[]>([])
 const showTemplateHelp = ref(false)
+const activeTab = ref('config') // config | test
 
 // Fetch Tables
 const fetchTables = async () => {
@@ -230,7 +435,7 @@ const confirmImport = () => {
         if (existing) {
             newConfig.push({
                 ...existing,
-                type: col.type // Sync type
+                type: normalizeType(col.type)
             })
         } else {
             newConfig.push({
@@ -244,6 +449,103 @@ const confirmImport = () => {
     form.value[target] = newConfig
     showImportDialog.value = false
     showToast(`成功同步 ${newConfig.length} 个字段`, 'success')
+}
+
+const buildColumnsConfig = (names: string[], target: 'fields_config' | 'allowed_filters') => {
+    return names.map((name) => {
+        const col = availableColumns.value.find((c) => c.name === name)
+        const existing = form.value[target].find((f) => f.name === name)
+        if (existing) {
+            return { ...existing, type: col ? normalizeType(col.type) : existing.type }
+        }
+        return {
+            name,
+            label: col?.comment || name,
+            type: col ? normalizeType(col.type) : 'String',
+        }
+    })
+}
+
+const autoImportAllFields = (quiet = false) => {
+    if (availableColumns.value.length === 0) return
+    form.value.fields_config = buildColumnsConfig(
+        availableColumns.value.map((c) => c.name),
+        'fields_config'
+    )
+    if (!form.value.default_sort && form.value.fields_config.length > 0) {
+        const preferred = form.value.fields_config.find((f) =>
+            ['id', 'updated_at', 'created_at', 'rowkey'].includes(f.name)
+        )
+        form.value.default_sort = preferred?.name || form.value.fields_config[0]?.name || ''
+    }
+    if (!quiet) showToast(`已导入 ${form.value.fields_config.length} 个返回字段`, 'success')
+}
+
+const onTableSelected = async () => {
+    if (form.value.resource_mode !== 'TABLE' || !form.value.table_name) return
+    await fetchColumns(true)
+    if (!isEdit.value && form.value.fields_config.length === 0 && availableColumns.value.length > 0) {
+        autoImportAllFields(true)
+        showToast('已自动导入全部返回字段，请确认过滤字段与默认排序', 'info')
+    }
+}
+
+const copyFieldsToFilters = () => {
+    if (form.value.fields_config.length === 0) {
+        showToast('请先配置返回字段', 'warning')
+        return
+    }
+    form.value.allowed_filters = form.value.fields_config.map((f) => ({ ...f }))
+    fieldConfigTab.value = 'filters'
+    showToast('已从返回字段复制到过滤字段', 'success')
+}
+
+const requestClearFields = () => {
+    openConfirm({
+        title: '清空返回字段',
+        message: '确定清空所有返回字段配置吗？此操作不可撤销。',
+        type: 'danger',
+        confirmText: '清空',
+        onConfirm: () => {
+            form.value.fields_config = []
+            confirmDialog.value.show = false
+        },
+    })
+}
+
+const requestClearFilters = () => {
+    openConfirm({
+        title: '清空过滤字段',
+        message: '确定清空所有允许过滤字段吗？',
+        type: 'danger',
+        confirmText: '清空',
+        onConfirm: () => {
+            form.value.allowed_filters = []
+            confirmDialog.value.show = false
+        },
+    })
+}
+
+const requestModeChange = (mode: 'TABLE' | 'SQL') => {
+    if (form.value.resource_mode === mode) return
+    const hasContent =
+        !!form.value.table_name ||
+        !!form.value.custom_sql.trim() ||
+        form.value.fields_config.length > 0 ||
+        form.value.allowed_filters.length > 0
+    if (!hasContent) {
+        form.value.resource_mode = mode
+        return
+    }
+    openConfirm({
+        title: '切换资源模式',
+        message: '切换模式后，请重新确认数据表/SQL 与字段配置是否一致。',
+        type: 'warning',
+        onConfirm: () => {
+            form.value.resource_mode = mode
+            confirmDialog.value.show = false
+        },
+    })
 }
 
 const toggleAllColumns = () => {
@@ -266,30 +568,56 @@ const normalizeType = (dbType: string): string => {
     return 'String' // Default
 }
 
-// Watchers
-import { watch } from 'vue'
 watch(() => form.value.data_source, (val) => {
     if (val) fetchTables()
 })
+watch(existingGroups, () => {
+    if (form.value.resource_group) syncGroupPickerFromForm()
+})
 watch(() => form.value.table_name, () => {
-    if (form.value.resource_mode === 'TABLE') fetchColumns()
+    if (form.value.resource_mode === 'TABLE') onTableSelected()
 })
 
-// Save
-const save = async () => {
-    if (!form.value.default_sort) {
-        showToast('请选择默认排序字段，以确保分页查询性能和结果稳定性', 'warning')
-        return
+const validateBeforeSave = (): boolean => {
+    showValidationBanner.value = true
+    if (validationIssues.value.length > 0) {
+        const first = validationIssues.value[0]
+        if (first) {
+            scrollToSection(first.id)
+            showToast(
+                `还有 ${validationIssues.value.length} 项未完成：${first.label}`,
+                'warning'
+            )
+        }
+        return false
     }
+    if (!isBuiltinSystemResource.value && !normalizeResourceGroup()) return false
+    return true
+}
+
+// Save
+const save = async (redirectToTest = false) => {
+    if (!validateBeforeSave()) return
     saving.value = true
     try {
         if (isEdit.value) {
             await axios.put(`/api/portal/meta/resources/${resourceKeyParam}`, form.value)
             showToast('资源更新成功', 'success')
+            snapshotForm()
+            showValidationBanner.value = false
+            if (redirectToTest) activeTab.value = 'test'
         } else {
             await axios.post('/api/portal/meta/resources', form.value)
             showToast('资源创建成功', 'success')
-            router.push('/dashboard/resources')
+            hasSavedOnce.value = true
+            snapshotForm()
+            showValidationBanner.value = false
+            if (redirectToTest) {
+                await router.replace(`/dashboard/resources/${form.value.resource_key}`)
+                activeTab.value = 'test'
+            } else {
+                router.push('/dashboard/resources')
+            }
         }
     } catch (e: any) {
         showToast(e.response?.data?.detail || '保存失败', 'error')
@@ -297,6 +625,8 @@ const save = async () => {
         saving.value = false
     }
 }
+
+const saveAndTest = () => save(true)
 
 // API URL Helper
 const apiUrl = computed(() => {
@@ -321,7 +651,6 @@ const testParams = ref<Record<string, any>>({
 })
 const testResult = ref<any>(null)
 const testLoading = ref(false)
-const activeTab = ref('config') // config | test
 
 const runTest = async () => {
     // Need to save first? No, Universal API reads from DB.
@@ -385,23 +714,23 @@ const handleReady = (payload: any) => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6 pb-24">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center space-x-4">
-            <button @click="router.back()" class="bg-white p-2 rounded-lg shadow-sm border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button type="button" @click="goBack" class="bg-white p-2 rounded-lg shadow-sm border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
             </button>
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">{{ isEdit ? '编辑资源' : '新建资源' }}</h1>
-                <p class="text-sm text-gray-500 mt-0.5">{{ isEdit ? '管理接口元数据与数据源映射' : '定义新的数据资源接口' }}</p>
+                <p class="text-sm text-gray-500 mt-0.5">{{ isEdit ? '管理接口元数据与数据源映射' : '按步骤完成：基础信息 → 选表/SQL → 字段 → 排序 → 保存' }}</p>
             </div>
         </div>
         
-        <div class="flex items-center space-x-4">
-            <!-- Tabs (Styled like Users filters or segmented control) -->
+        <div class="flex items-center flex-wrap gap-3">
             <div class="flex bg-gray-200/50 p-1 rounded-xl">
                 <button 
+                    type="button"
                     @click="activeTab = 'config'"
                     class="px-4 py-2 rounded-lg text-sm font-bold transition-all"
                     :class="activeTab === 'config' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'"
@@ -412,9 +741,12 @@ const handleReady = (payload: any) => {
                   </span>
                 </button>
                 <button 
-                    @click="activeTab = 'test'"
-                    class="px-4 py-2 rounded-lg text-sm font-bold transition-all"
+                    type="button"
+                    :disabled="!canUseTestTab"
+                    @click="switchToTestTab"
+                    class="px-4 py-2 rounded-lg text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     :class="activeTab === 'test' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'"
+                    :title="canUseTestTab ? '' : '请先保存资源后再测试'"
                 >
                   <span class="flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
@@ -423,35 +755,99 @@ const handleReady = (payload: any) => {
                 </button>
             </div>
             
-            <button 
-                v-if="activeTab === 'config' && hasPerm('element:resource:edit')"
-                @click="save" 
-                :disabled="saving"
-                class="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md shadow-blue-200 transition-all disabled:opacity-50 flex items-center gap-2"
+            <template v-if="activeTab === 'config' && hasPerm('element:resource:edit')">
+                <button 
+                    type="button"
+                    @click="save(false)" 
+                    :disabled="saving"
+                    class="px-5 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md shadow-blue-200 transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                    <span v-if="saving" class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                    {{ saveButtonLabel }}
+                </button>
+                <button
+                    v-if="!isEdit"
+                    type="button"
+                    @click="saveAndTest"
+                    :disabled="saving"
+                    class="px-4 py-2 border border-blue-200 text-blue-700 font-medium rounded-lg hover:bg-blue-50 transition-all disabled:opacity-50"
+                >
+                    保存并测试
+                </button>
+            </template>
+        </div>
+    </div>
+
+    <!-- Wizard steps -->
+    <div v-if="activeTab === 'config' && !loading" class="bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
+        <div class="flex flex-wrap gap-2">
+            <button
+                v-for="(step, idx) in wizardSteps"
+                :key="step.id"
+                type="button"
+                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors"
+                :class="step.done ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-gray-50 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100'"
+                @click="scrollToSection(step.id)"
             >
-                <svg v-if="!saving" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                <span v-else class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
-                {{ saving ? '正在保存...' : '保存更改' }}
+                <span class="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center" :class="step.done ? 'bg-green-500 text-white' : 'bg-gray-300 text-white'">{{ idx + 1 }}</span>
+                {{ step.label }}
             </button>
         </div>
     </div>
 
+    <!-- Validation banner -->
+    <div
+        v-if="showValidationBanner && validationIssues.length > 0 && activeTab === 'config'"
+        class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800"
+    >
+        <p class="font-medium mb-1">还有 {{ validationIssues.length }} 项需要完成：</p>
+        <ul class="list-disc pl-5 space-y-0.5">
+            <li v-for="issue in validationIssues" :key="issue.label">
+                <button type="button" class="underline hover:text-amber-900" @click="scrollToSection(issue.id)">{{ issue.label }}</button>
+            </li>
+        </ul>
+    </div>
+
     <!-- Loading -->
-    <div v-if="loading" class="text-center py-10">加载中...</div>
+    <div v-if="loading" class="bg-white rounded-lg border border-gray-200 p-6 space-y-4 animate-pulse">
+        <div class="h-6 bg-gray-200 rounded w-1/3"></div>
+        <div class="grid grid-cols-2 gap-4">
+            <div class="h-10 bg-gray-100 rounded"></div>
+            <div class="h-10 bg-gray-100 rounded"></div>
+        </div>
+        <div class="h-32 bg-gray-100 rounded"></div>
+    </div>
 
     <!-- Config Form -->
     <div v-show="activeTab === 'config' && !loading" class="bg-white shadow rounded-lg p-6 space-y-6">
         <!-- Basic Info -->
+        <div id="section-basic" class="scroll-mt-24">
+        <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">1. 基础信息</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
                 <label class="block text-sm font-medium text-gray-700 flex items-center">
                     资源标识 (Key)
-                    <span class="custom-tooltip" data-tooltip="资源标识：对于接口的名称，英文。例如 'yunshu_rooms'">
+                    <span class="custom-tooltip" data-tooltip="英文唯一标识，用于 API 路径。示例：ccg.containers">
                         <svg class="w-4 h-4 ml-1 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     </span>
                 </label>
-                <input v-model="form.resource_key" :disabled="isEdit || !hasPerm('element:resource:edit')" type="text" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-50" />
-                <p class="mt-1 text-xs text-gray-500">唯一标识符，用于 API 路径。</p>
+                <input
+                  v-model="form.resource_key"
+                  :disabled="isEdit || !hasPerm('element:resource:edit')"
+                  type="text"
+                  placeholder="例如：ccg.containers"
+                  class="mt-1 block w-full border rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm font-mono disabled:bg-gray-50"
+                  :class="showValidationBanner && keyError ? 'border-red-300' : 'border-gray-300'"
+                />
+                <p v-if="showValidationBanner && keyError" class="mt-1 text-xs text-red-600">{{ keyError }}</p>
+                <p v-else class="mt-1 text-xs text-gray-500">小写字母开头，可含数字、点号与下划线。</p>
+                <div v-if="apiUrl" class="mt-2 bg-gray-50 p-2 rounded border border-gray-200">
+                    <p class="text-[10px] text-gray-400 uppercase mb-1">API 地址预览</p>
+                    <div class="flex gap-1">
+                        <code class="text-xs text-gray-600 truncate flex-1">{{ apiUrl }}</code>
+                        <button type="button" class="text-xs text-blue-600 shrink-0" @click="copyApiUrl">复制</button>
+                    </div>
+                </div>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 flex items-center">
@@ -465,23 +861,34 @@ const handleReady = (payload: any) => {
             <div>
                 <label class="block text-sm font-medium text-gray-700 flex items-center">
                     分组
-                    <span class="custom-tooltip" data-tooltip="分组：用于 API 文档的分组导航。例如：智服平台, 动环数据">
+                    <span class="custom-tooltip" data-tooltip="用于资源列表侧栏分组，请从已有分组中选择">
                         <svg class="w-4 h-4 ml-1 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     </span>
                 </label>
-                <input
-                  v-model="form.resource_group"
-                  :disabled="!hasPerm('element:resource:edit')"
-                  list="group-suggestions"
-                  type="text"
-                  placeholder="从列表选择或输入新分组（建议英文/下划线）"
-                  class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-50"
-                  @blur="form.resource_group = (form.resource_group || '').trim()"
-                />
-                <p class="mt-1 text-xs text-gray-400">请优先从已有分组中选择，避免「SQL-LAB」与「SQL_LAB」等重复分组。</p>
-                <datalist id="group-suggestions">
-                    <option v-for="g in existingGroups" :key="g" :value="g"></option>
-                </datalist>
+                <div class="mt-1 space-y-2">
+                  <select
+                    v-model="groupPickerValue"
+                    :disabled="!hasPerm('element:resource:edit') || isBuiltinSystemResource"
+                    class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-50"
+                    @change="onGroupPickerChange"
+                  >
+                    <option value="">选择分组...</option>
+                    <option v-for="g in selectableGroups" :key="g" :value="g">{{ g }}</option>
+                    <option value="__new__">+ 新建分组...</option>
+                  </select>
+                  <input
+                    v-if="groupPickerValue === '__new__'"
+                    v-model="form.resource_group"
+                    :disabled="!hasPerm('element:resource:edit')"
+                    type="text"
+                    placeholder="输入新分组名"
+                    class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    @blur="normalizeResourceGroup()"
+                  />
+                </div>
+                <p class="mt-1 text-xs text-gray-400">
+                  「{{ SYSTEM_RESOURCE_GROUP }}」为系统内置分组，不可选用。
+                </p>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">数据源</label>
@@ -497,20 +904,19 @@ const handleReady = (payload: any) => {
                 <textarea v-model="form.remarks" :disabled="!hasPerm('element:resource:edit')" rows="2" placeholder="在此输入资源的补充说明信息 (非必填)" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-50"></textarea>
             </div>
         </div>
-
-        <!-- API URL Display -->
-        <div v-if="isEdit" class="bg-gray-50 p-4 rounded-md border border-gray-200">
-             <label class="block text-xs font-medium text-gray-500 uppercase">Universal API URL</label>
-             <div class="mt-1 flex rounded-md shadow-sm">
-                 <input type="text" :value="apiUrl" readonly class="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-l-md border border-gray-300 bg-white text-sm text-gray-500" />
-                 <button @click="copyApiUrl" class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 rounded-r-md bg-gray-100 text-gray-500 hover:bg-gray-200 text-sm font-medium">
-                     复制
-                 </button>
-             </div>
         </div>
-        
-        <!-- Status & Stats -->
-         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Advanced settings -->
+        <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+                type="button"
+                class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-sm font-medium text-gray-700"
+                @click="showAdvanced = !showAdvanced"
+            >
+                <span>高级设置（状态 / 缓存）</span>
+                <svg class="w-4 h-4 transition-transform" :class="showAdvanced ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div v-show="showAdvanced" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-gray-200">
              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">资源状态</label>
                 <div class="flex items-center space-x-6">
@@ -528,15 +934,8 @@ const handleReady = (payload: any) => {
                         </button>
                         <span class="ml-3 text-sm text-gray-900">{{ form.status === 1 ? '启用' : '禁用' }}</span>
                     </div>
-
-                    <!-- Cache TTL Input (Moved here for better layout) -->
                     <div class="flex items-center space-x-2 border-l border-gray-200 pl-6">
-                        <label class="block text-sm font-medium text-gray-700 whitespace-nowrap flex items-center">
-                            <span class="mr-1">⚡️ 缓存 (秒)</span>
-                             <span class="custom-tooltip" data-tooltip="查询结果缓存时间 (TTL)。0 表示不缓存。设置后，通过 universal API 查询时将返回 X-Cache: HIT。适合更新频率低的数据。">
-                                <svg class="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            </span>
-                        </label>
+                        <label class="block text-sm font-medium text-gray-700 whitespace-nowrap">缓存 (秒)</label>
                         <input 
                             v-model.number="form.cache_ttl" 
                             :disabled="!hasPerm('element:resource:edit')"
@@ -553,26 +952,28 @@ const handleReady = (payload: any) => {
                      {{ form.reference_count || 0 }} 个用户
                  </div>
              </div>
-         </div>
+            </div>
+        </div>
 
         <hr class="border-gray-200" />
 
         <!-- Mode & Source -->
-        <!-- Mode & Source -->
+        <div id="section-source" class="scroll-mt-24">
+        <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">2. 数据映射</h2>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                 资源模式
-                <span class="custom-tooltip" data-tooltip="资源模式：TABLE (直接查询物理表，支持自动分页/排序/过滤) 或 SQL (使用自定义 SQL 作为驱动子查询)。">
+                <span class="custom-tooltip" data-tooltip="TABLE：直接查物理表；SQL：自定义 SQL 子查询">
                     <svg class="w-4 h-4 ml-1 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                </span>
+                    </span>
             </label>
             <div class="flex items-center space-x-4">
-                <label class="inline-flex items-center">
-                    <input type="radio" v-model="form.resource_mode" :disabled="!hasPerm('element:resource:edit')" value="TABLE" class="form-radio text-primary disabled:opacity-50" />
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="radio" :checked="form.resource_mode === 'TABLE'" :disabled="!hasPerm('element:resource:edit')" class="form-radio text-primary disabled:opacity-50" @change="requestModeChange('TABLE')" />
                     <span class="ml-2" :class="!hasPerm('element:resource:edit') ? 'text-gray-400' : ''">直接表 (TABLE)</span>
                 </label>
-                <label class="inline-flex items-center">
-                    <input type="radio" v-model="form.resource_mode" :disabled="!hasPerm('element:resource:edit')" value="SQL" class="form-radio text-primary disabled:opacity-50" />
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="radio" :checked="form.resource_mode === 'SQL'" :disabled="!hasPerm('element:resource:edit')" class="form-radio text-primary disabled:opacity-50" @change="requestModeChange('SQL')" />
                     <span class="ml-2" :class="!hasPerm('element:resource:edit') ? 'text-gray-400' : ''">自定义 SQL (SQL)</span>
                 </label>
             </div>
@@ -580,15 +981,20 @@ const handleReady = (payload: any) => {
 
         <div v-if="form.resource_mode === 'TABLE'">
             <label class="block text-sm font-medium text-gray-700">表名</label>
-            <div class="mt-1 flex gap-2">
-                <select v-model="form.table_name" :disabled="!hasPerm('element:resource:edit')" class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-50 disabled:text-gray-500">
-                    <option value="" disabled>选择表...</option>
-                    <option v-for="t in availableTables" :key="typeof t === 'string' ? t : t.name" :value="typeof t === 'string' ? t : t.name">
-                        {{ typeof t === 'string' ? t : `${t.name} [${t.type}]` }}
-                    </option>
-                </select>
-                <button v-if="hasPerm('element:resource:edit')" @click="fetchTables" class="px-3 py-2 border border-gray-300 rounded-md bg-gray-50 hover:bg-gray-100 text-gray-600">
-                    刷新
+            <div class="mt-1 flex gap-2 items-stretch">
+                <TablePicker
+                  v-model="form.table_name"
+                  :tables="availableTables"
+                  :disabled="!hasPerm('element:resource:edit')"
+                  placeholder="选择表..."
+                />
+                <button
+                  v-if="hasPerm('element:resource:edit')"
+                  type="button"
+                  class="shrink-0 whitespace-nowrap px-3 flex items-center border border-gray-300 rounded-md bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm"
+                  @click="fetchTables"
+                >
+                  刷新
                 </button>
             </div>
         </div>
@@ -670,143 +1076,175 @@ const handleReady = (payload: any) => {
                     @ready="handleReady"
                 />
             </div>
-            <div class="mt-2 flex justify-between items-start">
+            <div class="mt-2 flex flex-wrap justify-between items-start gap-2">
                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-2 text-xs text-yellow-700 max-w-lg">
                    警告：不要包含分号 (; )。SQL 将作为子查询执行。
                </div>
-               <button v-if="hasPerm('element:resource:edit')" @click="() => fetchColumns(false)" :disabled="analyzing" class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 text-sm font-medium">
+               <div class="flex flex-wrap gap-2 shrink-0">
+               <button v-if="hasPerm('element:resource:edit')" type="button" @click="() => fetchColumns(false)" :disabled="analyzing" class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 text-sm font-medium">
                    {{ analyzing ? '解析中...' : '解析 SQL 获取字段' }}
                </button>
+               <router-link to="/dashboard/lab" class="px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md border border-blue-100 inline-flex items-center">
+                   在 SQL 实验室调试
+               </router-link>
+               </div>
             </div>
             
             <!-- Template Help Moved -->
+        </div>
         </div>
 
         <hr class="border-gray-200" />
 
         <!-- Fields Config -->
-        <div class="space-y-4">
-            <div class="flex justify-between items-center">
-                <label class="block text-lg font-semibold text-gray-900 flex items-center">
-                    字段配置 (Fields Config)
-                    <span class="custom-tooltip" data-tooltip="字段配置：定义 API 返回的列及其展示标签。配置中文名称和数据类型以便于生成文档和模型查阅。">
-                        <svg class="w-4 h-4 ml-2 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    </span>
-                </label>
-                <div v-if="hasPerm('element:resource:edit')" class="space-x-2">
-                    <button @click="openImportDialog('fields_config')" class="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded hover:bg-indigo-100">
-                        从数据库导入/同步
-                    </button>
-                    <button @click="form.fields_config = []" class="px-3 py-1 bg-red-50 text-red-700 text-sm font-medium rounded hover:bg-red-100">
-                        清空
+        <div id="section-fields" class="scroll-mt-24 space-y-4">
+            <div class="flex flex-wrap justify-between items-center gap-3">
+                <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider">3. 字段与过滤</h2>
+                <div v-if="hasPerm('element:resource:edit')" class="flex flex-wrap gap-2">
+                    <button
+                        v-if="form.resource_mode === 'TABLE' && availableColumns.length > 0"
+                        type="button"
+                        class="px-3 py-1 bg-green-50 text-green-700 text-sm font-medium rounded hover:bg-green-100"
+                        @click="autoImportAllFields(false)"
+                    >
+                        一键导入全部字段
                     </button>
                 </div>
             </div>
-            
-            <div class="border border-gray-200 rounded-lg overflow-hidden">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">字段名 (Name)</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">中文名称 (Label)</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">数据类型 (DataType)</th>
-                            <th v-if="hasPerm('element:resource:edit')" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        <tr v-for="(field, index) in form.fields_config" :key="field.name">
-                            <td class="px-4 py-2 text-sm font-mono text-gray-900">{{ field.name }}</td>
-                            <td class="px-4 py-2">
-                                <input v-model="field.label" :disabled="!hasPerm('element:resource:edit')" type="text" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:ring-primary focus:border-primary" />
-                            </td>
-                            <td class="px-4 py-2">
-                                <select v-model="field.type" :disabled="!hasPerm('element:resource:edit')" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:ring-primary focus:border-primary font-mono text-xs">
-                                    <option value="String">String</option>
-                                    <option value="Long">Long</option>
-                                    <option value="Date">Date</option>
-                                </select>
-                            </td>
-                            <td v-if="hasPerm('element:resource:edit')" class="px-4 py-2 text-right">
-                                <button @click="removeField('fields_config', index)" class="text-red-600 hover:text-red-900">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            </td>
-                        </tr>
-                        <tr v-if="form.fields_config.length === 0">
-                            <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 italic">暂无已选字段，点击同步从数据库获取</td>
-                        </tr>
-                    </tbody>
-                </table>
+
+            <div class="flex border-b border-gray-200">
+                <button
+                    type="button"
+                    class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+                    :class="fieldConfigTab === 'fields' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                    @click="fieldConfigTab = 'fields'"
+                >
+                    返回字段 ({{ form.fields_config.length }})
+                </button>
+                <button
+                    type="button"
+                    class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
+                    :class="fieldConfigTab === 'filters' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                    @click="fieldConfigTab = 'filters'"
+                >
+                    允许过滤 ({{ form.allowed_filters.length }})
+                </button>
+            </div>
+
+            <!-- Fields tab -->
+            <div v-show="fieldConfigTab === 'fields'" class="space-y-3">
+                <div v-if="hasPerm('element:resource:edit')" class="flex flex-wrap gap-2">
+                    <button type="button" @click="openImportDialog('fields_config')" class="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded hover:bg-indigo-100">
+                        从数据库选择导入
+                    </button>
+                    <button type="button" @click="requestClearFields" class="px-3 py-1 bg-red-50 text-red-700 text-sm font-medium rounded hover:bg-red-100">
+                        清空
+                    </button>
+                </div>
+                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">字段名</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">中文名称</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
+                                <th v-if="hasPerm('element:resource:edit')" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <tr v-for="(field, index) in form.fields_config" :key="field.name">
+                                <td class="px-4 py-2 text-sm font-mono text-gray-900">{{ field.name }}</td>
+                                <td class="px-4 py-2">
+                                    <input v-model="field.label" :disabled="!hasPerm('element:resource:edit')" type="text" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+                                </td>
+                                <td class="px-4 py-2">
+                                    <select v-model="field.type" :disabled="!hasPerm('element:resource:edit')" class="w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono text-xs">
+                                        <option value="String">String</option>
+                                        <option value="Long">Long</option>
+                                        <option value="Date">Date</option>
+                                    </select>
+                                </td>
+                                <td v-if="hasPerm('element:resource:edit')" class="px-4 py-2 text-right">
+                                    <button type="button" @click="removeField('fields_config', index)" class="text-red-600 hover:text-red-900">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr v-if="form.fields_config.length === 0">
+                                <td :colspan="hasPerm('element:resource:edit') ? 4 : 3" class="px-4 py-8 text-center text-sm text-gray-500">选表后将自动导入，或点击「从数据库选择导入」</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Filters tab -->
+            <div v-show="fieldConfigTab === 'filters'" class="space-y-3">
+                <div v-if="hasPerm('element:resource:edit')" class="flex flex-wrap gap-2">
+                    <button type="button" @click="openImportDialog('allowed_filters')" class="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded hover:bg-indigo-100">
+                        从数据库选择导入
+                    </button>
+                    <button type="button" @click="copyFieldsToFilters" class="px-3 py-1 bg-blue-50 text-blue-700 text-sm font-medium rounded hover:bg-blue-100">
+                        从返回字段复制
+                    </button>
+                    <button type="button" @click="requestClearFilters" class="px-3 py-1 bg-red-50 text-red-700 text-sm font-medium rounded hover:bg-red-100">
+                        清空
+                    </button>
+                </div>
+                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">字段名</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">中文名称</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
+                                <th v-if="hasPerm('element:resource:edit')" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <tr v-for="(field, index) in form.allowed_filters" :key="field.name">
+                                <td class="px-4 py-2 text-sm font-mono text-gray-900">{{ field.name }}</td>
+                                <td class="px-4 py-2">
+                                    <input v-model="field.label" :disabled="!hasPerm('element:resource:edit')" type="text" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" />
+                                </td>
+                                <td class="px-4 py-2">
+                                    <select v-model="field.type" :disabled="!hasPerm('element:resource:edit')" class="w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono text-xs">
+                                        <option value="String">String</option>
+                                        <option value="Long">Long</option>
+                                        <option value="Date">Date</option>
+                                    </select>
+                                </td>
+                                <td v-if="hasPerm('element:resource:edit')" class="px-4 py-2 text-right">
+                                    <button type="button" @click="removeField('allowed_filters', index)" class="text-red-600 hover:text-red-900">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr v-if="form.allowed_filters.length === 0">
+                                <td :colspan="hasPerm('element:resource:edit') ? 4 : 3" class="px-4 py-8 text-center text-sm text-gray-500">可从返回字段复制，或从数据库选择导入</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
         <hr class="border-gray-200" />
 
-        <!-- Filters Config -->
-        <div class="space-y-4">
-            <div class="flex justify-between items-center">
-                <label class="block text-lg font-semibold text-gray-900 flex items-center">
-                    允许过滤配置 (Allowed Filters)
-                    <span class="custom-tooltip" data-tooltip="过滤配置：允许客户端进行筛选的字段集合。配置中文标签以便快速理解查询参数。">
-                        <svg class="w-4 h-4 ml-2 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    </span>
-                </label>
-                <div v-if="hasPerm('element:resource:edit')" class="space-x-2">
-                    <button @click="openImportDialog('allowed_filters')" class="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-medium rounded hover:bg-indigo-100">
-                        从数据库导入/同步
-                    </button>
-                    <button @click="form.allowed_filters = []" class="px-3 py-1 bg-red-50 text-red-700 text-sm font-medium rounded hover:bg-red-100">
-                        清空
-                    </button>
-                </div>
-            </div>
-            
-            <div class="border border-gray-200 rounded-lg overflow-hidden">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">字段名 (Name)</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">中文名称 (Label)</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">数据类型 (DataType)</th>
-                            <th v-if="hasPerm('element:resource:edit')" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        <tr v-for="(field, index) in form.allowed_filters" :key="field.name">
-                            <td class="px-4 py-2 text-sm font-mono text-gray-900">{{ field.name }}</td>
-                            <td class="px-4 py-2">
-                                <input v-model="field.label" :disabled="!hasPerm('element:resource:edit')" type="text" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:ring-primary focus:border-primary" />
-                            </td>
-                            <td class="px-4 py-2">
-                                <select v-model="field.type" :disabled="!hasPerm('element:resource:edit')" class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:ring-primary focus:border-primary font-mono text-xs">
-                                    <option value="String">String</option>
-                                    <option value="Long">Long</option>
-                                    <option value="Date">Date</option>
-                                </select>
-                            </td>
-                            <td v-if="hasPerm('element:resource:edit')" class="px-4 py-2 text-right">
-                                <button @click="removeField('allowed_filters', index)" class="text-red-600 hover:text-red-900">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            </td>
-                        </tr>
-                        <tr v-if="form.allowed_filters.length === 0">
-                            <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 italic">暂无已选过滤字段，点击同步从数据库获取</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <hr class="border-gray-200" />
-
+        <div id="section-sort" class="scroll-mt-24">
+        <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">4. 默认排序</h2>
         <div>
-            <label class="block text-sm font-medium text-gray-700">默认排序字段</label>
-            <select v-model="form.default_sort" :disabled="!hasPerm('element:resource:edit')" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm">
-                <option value="">无</option>
-                <option v-for="col in availableColumns" :key="col.name" :value="col.name">{{ col.name }}</option>
-                <option v-if="form.default_sort && !availableColumns.find(c => c.name === form.default_sort)" :value="form.default_sort">{{ form.default_sort }} (Custom)</option>
-            </select>
+            <label class="block text-sm font-medium text-gray-700">默认排序字段 <span class="text-red-500">*</span></label>
+            <p class="text-xs text-gray-400 mb-1">分页查询必须指定排序字段，以保证结果稳定。</p>
+            <div class="mt-1 max-w-md" :class="showValidationBanner && !form.default_sort ? 'ring-1 ring-red-300 rounded-md' : ''">
+                <ColumnPicker
+                  v-model="form.default_sort"
+                  :columns="form.fields_config.length ? form.fields_config.map(f => ({ name: f.name, type: f.type, comment: f.label })) : availableColumns"
+                  :disabled="!hasPerm('element:resource:edit')"
+                  empty-label="请选择..."
+                />
+            </div>
+        </div>
         </div>
     </div>
 
@@ -824,7 +1262,8 @@ const handleReady = (payload: any) => {
 
         <div class="mb-4 bg-blue-50 p-4 rounded-md">
             <h3 class="text-sm font-medium text-blue-800">测试控制台</h3>
-            <p class="text-xs text-blue-600 mt-1">请先保存配置，再运行测试。</p>
+            <p v-if="!canUseTestTab" class="text-xs text-amber-700 mt-1">新建资源请先保存，或使用顶部「保存并测试」。</p>
+            <p v-else class="text-xs text-blue-600 mt-1">测试读取已保存的配置；修改后请先保存再测试。</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -976,6 +1415,48 @@ const handleReady = (payload: any) => {
         </div>
       </div>
     </teleport>
+
+    <!-- Sticky save bar -->
+    <div
+      v-if="activeTab === 'config' && !loading && hasPerm('element:resource:edit')"
+      class="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-gray-200 px-4 md:px-8 py-3 flex flex-wrap items-center justify-between gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]"
+    >
+      <div class="text-sm">
+        <span v-if="isDirty" class="text-amber-600 font-medium">有未保存的更改</span>
+        <span v-else-if="validationIssues.length === 0" class="text-green-600">配置项已完成，可以保存</span>
+        <span v-else class="text-gray-500">还差 {{ validationIssues.length }} 项未完成</span>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg" @click="goBack">取消</button>
+        <button
+          type="button"
+          :disabled="saving"
+          class="px-5 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          @click="save(false)"
+        >
+          {{ saveButtonLabel }}
+        </button>
+        <button
+          v-if="!isEdit"
+          type="button"
+          :disabled="saving"
+          class="px-4 py-2 border border-blue-200 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-50 disabled:opacity-50"
+          @click="saveAndTest"
+        >
+          保存并测试
+        </button>
+      </div>
+    </div>
+
+    <ConfirmDialog
+      :show="confirmDialog.show"
+      :title="confirmDialog.title"
+      :message="confirmDialog.message"
+      :type="confirmDialog.type"
+      :confirm-text="confirmDialog.confirmText"
+      @confirm="confirmDialog.onConfirm()"
+      @cancel="confirmDialog.show = false; pendingRouteNext = null"
+    />
   </div>
 </template>
 

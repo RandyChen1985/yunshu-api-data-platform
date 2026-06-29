@@ -3,6 +3,14 @@ from pydantic import BaseModel, Field, validator
 from datetime import datetime
 import json
 
+SYSTEM_RESOURCE_GROUP = "System"
+
+
+def validate_user_resource_group(v: Optional[str]) -> Optional[str]:
+    if v is not None and v.strip().lower() == SYSTEM_RESOURCE_GROUP.lower():
+        raise ValueError("'System' 分组为系统内置，不可用于普通资源")
+    return v
+
 class FieldConfig(BaseModel):
     name: str = Field(..., description="Technical field name")
     label: str = Field(..., description="Human-readable label (CN)")
@@ -30,7 +38,9 @@ class ResourceBase(BaseModel):
         return v
 
 class ResourceCreate(ResourceBase):
-    pass
+    @validator('resource_group')
+    def validate_group_not_system(cls, v):
+        return validate_user_resource_group(v)
 
 class ResourceUpdate(BaseModel):
     resource_name: Optional[str] = None

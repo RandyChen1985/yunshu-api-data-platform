@@ -9,6 +9,7 @@ import {
 import axios from '../utils/axios'
 import { useToast } from '../composables/useToast'
 import { useFullscreen } from '../composables/useFullscreen'
+import { isSystemResourceGroup, sortResourceGroups, SYSTEM_RESOURCE_GROUP } from '@/types/resource'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 
@@ -781,6 +782,7 @@ const showPublishModal = ref(false)
 const publishing = ref(false)
 const showMockPreview = ref(false)
 const existingGroups = ref<string[]>([])
+const selectableGroups = computed(() => existingGroups.value.filter((g) => !isSystemResourceGroup(g)))
 const showGroupDropdown = ref(false)
 const selectedFilters = ref<string[]>([])
 const hideGroupDropdown = () => { setTimeout(() => { showGroupDropdown.value = false }, 200) }
@@ -797,8 +799,8 @@ const fetchResourceGroups = async () => {
     const res = await axios.get('/api/portal/dashboard/my-resources')
     const data = Array.isArray(res.data) ? res.data : (res.data?.items || [])
     const groups = new Set<string>()
-    data.forEach((r: any) => { if (r.resource_group) groups.add(r.resource_group) })
-    existingGroups.value = Array.from(groups).sort()
+    data.forEach((r: any) => { if (r.resource_group && !isSystemResourceGroup(r.resource_group)) groups.add(r.resource_group) })
+    existingGroups.value = sortResourceGroups(Array.from(groups))
   } catch (e) { console.error('Failed to fetch groups', e) }
 }
 
@@ -836,6 +838,10 @@ const openPublishModal = () => {
 
 const handlePublish = async () => {
   if (!selectedSourceId.value || !currentTab.value?.result) return
+  if (isSystemResourceGroup(publishForm.value.resource_group)) {
+    showToast(`${SYSTEM_RESOURCE_GROUP} 为系统内置分组，不可用于普通资源`, 'warning')
+    return
+  }
   publishing.value = true
   
   const fields_config = currentTab.value.result.columns.map(col => ({ 
@@ -1172,9 +1178,9 @@ onMounted(() => {
                 placeholder="输入或选择分组..." 
                 class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
               />
-              <div v-if="showGroupDropdown && existingGroups.length > 0" class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+              <div v-if="showGroupDropdown && selectableGroups.length > 0" class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
                 <div 
-                  v-for="group in existingGroups" :key="group"
+                  v-for="group in selectableGroups" :key="group"
                   @mousedown="publishForm.resource_group = group; showGroupDropdown = false"
                   class="px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 cursor-pointer transition-colors"
                 >

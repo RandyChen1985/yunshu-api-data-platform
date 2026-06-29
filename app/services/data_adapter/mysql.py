@@ -269,21 +269,33 @@ class MySQLAdapter(DataSourceAdapter):
                 
             # Get columns from custom SQL (limit 0 for schema only)
             final_sql = f"SELECT * FROM ({sql}) as t LIMIT 0"
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    try:
+                        await cursor.execute(final_sql)
+                        columns = [desc[0] for desc in cursor.description]
+                    except Exception as e:
+                        logger.error(f"Failed to fetch columns for MySQL: {e} SQL: {final_sql}")
+                        raise ValueError(f"Invalid SQL or Table: {e}")
+            return [{"name": col, "type": "String", "comment": ""} for col in columns]
         elif table_name:
-            final_sql = f"SELECT * FROM `{table_name}` LIMIT 0"
-        else:
-            return []
-        
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                try:
-                    await cursor.execute(final_sql)
-                    columns = [desc[0] for desc in cursor.description]
-                except Exception as e:
-                     logger.error(f"Failed to fetch columns for MySQL: {e} SQL: {final_sql}")
-                     raise ValueError(f"Invalid SQL or Table: {e}")
-        
-        return [{"name": col, "type": "String", "comment": ""} for col in columns]
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        """
+                        SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s
+                        ORDER BY ORDINAL_POSITION
+                        """,
+                        (table_name,),
+                    )
+                    rows = await cursor.fetchall()
+            return [
+                {"name": row[0], "type": row[1] or "String", "comment": row[2] or ""}
+                for row in rows
+            ]
+        return []
 
     async def execute_sql(self, sql: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
