@@ -194,8 +194,8 @@ onMounted(() => {
   <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">目录权限申请</h1>
-        <p class="text-sm text-gray-500 mt-1">审批业务方对数据产品的 API 访问申请</p>
+        <h1 class="text-2xl font-bold text-gray-900">目录权限审批</h1>
+        <p class="text-sm text-gray-500 mt-1">审批业务方对数据产品的 API 访问申请（管理员与产品负责人）</p>
       </div>
       <select v-model="statusFilter" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" @change="fetchRequests">
         <option :value="0">待审批</option>

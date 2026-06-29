@@ -31,6 +31,40 @@ const form = ref({
   featured: false,
 })
 const tagInput = ref('')
+const resourceConflicts = ref<any[]>([])
+const archivingConflict = ref<string | null>(null)
+
+const fetchResourceConflicts = async () => {
+  if (!linkedResources.value.length) {
+    resourceConflicts.value = []
+    return
+  }
+  try {
+    const keys = linkedResources.value.map((r) => r.resource_key).join(',')
+    const res = await axios.get(
+      `/api/portal/catalog/products/${productKey.value}/resource-conflicts`,
+      { params: { keys } },
+    )
+    resourceConflicts.value = res.data
+  } catch {
+    resourceConflicts.value = []
+  }
+}
+
+const archiveConflict = async (item: any) => {
+  archivingConflict.value = item.product_key
+  try {
+    await axios.post(`/api/portal/catalog/products/${item.product_key}/archive-redundant`, {
+      revoke_permissions: item.status === 1,
+    })
+    showToast(`已归档冗余产品「${item.display_name}」`, 'success')
+    await fetchResourceConflicts()
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '归档失败', 'error')
+  } finally {
+    archivingConflict.value = null
+  }
+}
 
 const confirmDialog = ref({
   show: false,
@@ -72,6 +106,7 @@ const load = async () => {
       is_primary: !!r.is_primary,
     }))
     meta.value = metaRes.data
+    await fetchResourceConflicts()
   } catch {
     router.replace('/dashboard/catalog')
   } finally {
@@ -105,6 +140,7 @@ const addResource = () => {
     is_primary: linkedResources.value.length === 0,
   })
   addResourceKey.value = ''
+  fetchResourceConflicts()
 }
 
 const setPrimary = (key: string) => {
@@ -137,7 +173,10 @@ const removeResource = (key: string) => {
     message: `确认从产品移除「${target.resource_name || key}」？`,
     type: 'warning',
     confirmText: '移除',
-    onConfirm: doRemove,
+    onConfirm: () => {
+      doRemove()
+      fetchResourceConflicts()
+    },
   }
 }
 
@@ -163,6 +202,11 @@ const save = async () => {
         is_primary: r.is_primary,
       })),
     })
+    await fetchResourceConflicts()
+    if (resourceConflicts.value.length) {
+      showToast('保存成功，请归档下方冗余产品', 'warning')
+      return
+    }
     showToast('保存成功', 'success')
     router.push(`/dashboard/catalog/${productKey.value}`)
   } catch (e: any) {
@@ -185,6 +229,36 @@ onMounted(load)
     <template v-else>
       <h1 class="text-2xl font-bold text-gray-900">编辑数据产品</h1>
       <p class="text-sm text-gray-500">完善简介、负责人与关联 API 后方可发布上架</p>
+
+      <div
+        v-if="resourceConflicts.length"
+        class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3"
+      >
+        <p class="text-sm font-medium text-amber-900">
+          以下 API 仍存在独立的冗余产品记录，建议归档以免目录重复展示：
+        </p>
+        <div
+          v-for="c in resourceConflicts"
+          :key="c.product_key"
+          class="flex flex-wrap items-center justify-between gap-2 text-sm bg-white/80 rounded-lg p-3"
+        >
+          <span>
+            <strong>{{ c.display_name }}</strong>
+            <span class="text-gray-500">（{{ c.product_key }}）</span>
+          </span>
+          <button
+            type="button"
+            class="text-xs px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+            :disabled="archivingConflict === c.product_key"
+            @click="archiveConflict(c)"
+          >
+            {{ archivingConflict === c.product_key ? '归档中...' : '一键归档' }}
+          </button>
+        </div>
+        <router-link to="/dashboard/catalog-redundant" class="text-xs text-amber-800 hover:text-amber-950 font-medium">
+          查看全部冗余产品 →
+        </router-link>
+      </div>
 
       <form class="bg-white rounded-xl border border-gray-100 p-6 space-y-5" @submit.prevent="save">
         <div>

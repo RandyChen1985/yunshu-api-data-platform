@@ -1341,7 +1341,42 @@ class CatalogService:
             async with conn.cursor() as cursor:
                 await cursor.execute(sql, (user_id, *resource_keys))
                 row = await cursor.fetchone()
-        return int(row[0] or 0) > 0 if row else False
+        return int(row[0] or 0) == len(resource_keys) if row else False
+
+    @classmethod
+    async def sync_user_product_access(cls, user: Dict, product_key: str) -> Dict[str, Any]:
+        """已通过审批但 has_access 未生效时，补写资源权限并刷新缓存"""
+        user_id = int(user["user_id"])
+        status = await cls.get_user_request_status(user_id, product_key)
+        if status != "approved":
+            raise ValueError("仅已通过审批的申请可同步权限")
+
+        product = await cls._get_raw_product(product_key)
+        if not product:
+            raise ValueError("产品不存在")
+
+        resource_keys = await cls._get_product_resource_keys(product["id"])
+        if not resource_keys:
+            raise ValueError("产品未关联 API 资源，请联系负责人配置")
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                for rk in resource_keys:
+                    await cursor.execute(
+                        "INSERT IGNORE INTO sys_user_resources (user_id, resource_key) VALUES (%s, %s)",
+                        (user_id, rk),
+                    )
+                await conn.commit()
+
+        await PermissionService.invalidate_user_cache(user_id)
+        accessible = await cls._user_resource_keys(user)
+        has_access = cls._product_has_access(resource_keys, accessible)
+        return {
+            "has_access": has_access,
+            "resource_keys": resource_keys,
+            "granted_count": sum(1 for k in resource_keys if k in accessible),
+            "required_count": len(resource_keys),
+        }
 
     @classmethod
     async def _mark_product_requests_revoked(
@@ -1424,3 +1459,233 @@ class CatalogService:
         return await cls.revoke_product_access(
             handler, req["product_key"], user_id=int(req["user_id"])
         )
+
+    @classmethod
+    async def _fetch_redundant_product_rows(cls) -> List[Dict[str, Any]]:
+        sql = """
+            SELECT
+                p.id AS product_id,
+                p.product_key,
+                p.display_name,
+                p.status,
+                p.owner_user_id,
+                u.user_name AS owner_name,
+                pr.resource_key AS duplicate_resource_key,
+                host.product_key AS host_product_key,
+                host.display_name AS host_display_name,
+                host.owner_user_id AS host_owner_user_id
+            FROM data_products p
+            JOIN data_product_resources pr ON pr.product_id = p.id
+            JOIN data_product_resources pr2
+                ON pr2.resource_key = pr.resource_key AND pr2.product_id != p.id
+            JOIN data_products host ON host.id = pr2.product_id
+            LEFT JOIN api_users u ON u.id = p.owner_user_id
+            ORDER BY p.updated_at DESC
+        """
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(sql)
+                rows = await cursor.fetchall()
+        deduped: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            pk = row["product_key"]
+            if pk not in deduped:
+                deduped[pk] = row
+        return list(deduped.values())
+
+    @classmethod
+    async def list_redundant_products(cls, user: Dict) -> List[Dict[str, Any]]:
+        rows = await cls._fetch_redundant_product_rows()
+        is_admin_user = user.get("role") == "admin"
+        perms = user.get("permissions", {}).get("elements", [])
+        can_manage = "element:catalog:manage" in perms
+        if is_admin_user or can_manage:
+            return rows
+        uid = int(user["user_id"])
+        return [
+            r
+            for r in rows
+            if r.get("owner_user_id") == uid or r.get("host_owner_user_id") == uid
+        ]
+
+    @classmethod
+    async def get_redundant_product_info(cls, product_key: str) -> Optional[Dict[str, Any]]:
+        for row in await cls._fetch_redundant_product_rows():
+            if row["product_key"] == product_key:
+                return row
+        return None
+
+    @classmethod
+    async def can_archive_redundant(cls, user: Dict, product_key: str) -> bool:
+        info = await cls.get_redundant_product_info(product_key)
+        if not info:
+            return False
+        if user.get("role") == "admin":
+            return True
+        perms = user.get("permissions", {}).get("elements", [])
+        if "element:catalog:manage" in perms:
+            return True
+        uid = int(user["user_id"])
+        return info.get("owner_user_id") == uid or info.get("host_owner_user_id") == uid
+
+    @classmethod
+    async def get_resource_duplicate_product(
+        cls, resource_key: str, *, exclude_product_key: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """资源曾单独发布为产品（product_key = resource_key）时返回可归档的冗余产品"""
+        row = await cls._get_raw_product(resource_key)
+        if not row:
+            return None
+        if exclude_product_key and row["product_key"] == exclude_product_key:
+            return None
+
+        host_product_key = exclude_product_key or ""
+        host_display_name = exclude_product_key or ""
+        if exclude_product_key:
+            host_row = await cls._get_raw_product(exclude_product_key)
+            if host_row:
+                host_display_name = host_row.get("display_name") or exclude_product_key
+        else:
+            info = await cls.get_redundant_product_info(resource_key)
+            if not info:
+                return None
+            host_product_key = info["host_product_key"]
+            host_display_name = info["host_display_name"]
+
+        return {
+            "product_key": row["product_key"],
+            "display_name": row["display_name"],
+            "status": row.get("status", 0),
+            "host_product_key": host_product_key,
+            "host_display_name": host_display_name,
+        }
+
+    @classmethod
+    async def check_resource_conflicts(
+        cls, resource_keys: List[str], *, host_product_key: str
+    ) -> List[Dict[str, Any]]:
+        conflicts: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+        for key in resource_keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            dup = await cls.get_resource_duplicate_product(
+                key, exclude_product_key=host_product_key
+            )
+            if dup:
+                conflicts.append(
+                    {
+                        "product_key": dup["product_key"],
+                        "display_name": dup["display_name"],
+                        "status": dup.get("status", 0),
+                        "duplicate_resource_key": key,
+                        "host_product_key": dup["host_product_key"],
+                        "host_display_name": dup["host_display_name"],
+                    }
+                )
+        return conflicts
+
+    @classmethod
+    async def archive_redundant_product(
+        cls,
+        user: Dict,
+        product_key: str,
+        *,
+        revoke_permissions: bool = False,
+    ) -> Dict[str, Any]:
+        info = await cls.get_redundant_product_info(product_key)
+        if not info:
+            raise ValueError("该产品不是冗余产品，无需归档")
+        if not await cls.can_archive_redundant(user, product_key):
+            raise PermissionError("无权归档该产品")
+
+        product = await cls._get_raw_product(product_key)
+        if not product:
+            raise ValueError("产品不存在")
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM data_product_access_requests
+                    WHERE product_id = %s AND status = %s
+                    """,
+                    (product["id"], REQUEST_PENDING),
+                )
+                pending_row = await cursor.fetchone()
+                if int(pending_row[0] or 0) > 0:
+                    raise ValueError(
+                        "该产品仍有待审批的权限申请，请先处理后再归档"
+                    )
+
+        if product.get("status") == STATUS_PUBLISHED and revoke_permissions:
+            await cls._revoke_all_product_access(product_key)
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "DELETE FROM data_product_resources WHERE product_id = %s",
+                    (product["id"],),
+                )
+                await cursor.execute(
+                    "DELETE FROM data_products WHERE id = %s",
+                    (product["id"],),
+                )
+                await conn.commit()
+
+        return {
+            "archived": True,
+            "product_key": product_key,
+            "host_product_key": info["host_product_key"],
+        }
+
+    @classmethod
+    async def list_my_access_requests(
+        cls, user: Dict, status: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """当前用户提交的目录权限申请"""
+        user_id = int(user["user_id"])
+        conditions = ["r.user_id = %s"]
+        params: List[Any] = [user_id]
+        if status is not None:
+            conditions.append("r.status = %s")
+            params.append(status)
+
+        sql = f"""
+            SELECT r.*, p.display_name AS product_name, p.owner_user_id, p.status AS product_status,
+                   pr.resource_key AS primary_resource_key, m.resource_group
+            FROM data_product_access_requests r
+            JOIN data_products p ON p.id = r.product_id
+            LEFT JOIN data_product_resources pr ON pr.product_id = p.id AND pr.is_primary = 1
+            LEFT JOIN sys_resource_meta m ON {RESOURCE_KEY_JOIN_SQL}
+            WHERE {' AND '.join(conditions)}
+            ORDER BY r.created_at DESC
+            LIMIT 200
+        """
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(sql, tuple(params))
+                rows = await cursor.fetchall()
+
+        status_labels = {
+            REQUEST_PENDING: "pending",
+            REQUEST_APPROVED: "approved",
+            REQUEST_REJECTED: "rejected",
+            REQUEST_REVOKED: "revoked",
+        }
+        for r in rows:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+            if r.get("handled_at"):
+                r["handled_at"] = r["handled_at"].strftime("%Y-%m-%d %H:%M:%S")
+            if r.get("updated_at"):
+                r["updated_at"] = r["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
+            r["status_label"] = status_labels.get(r.get("status"), "unknown")
+            if r.get("status") == REQUEST_APPROVED:
+                r["access_active"] = await cls._user_has_product_resource_access(
+                    user_id, int(r["product_id"])
+                )
+            else:
+                r["access_active"] = False
+        return rows

@@ -123,6 +123,8 @@ class AccessRequestItem(BaseModel):
     updated_at: Optional[str] = None
     owner_user_id: Optional[int] = None
     access_active: Optional[bool] = None
+    primary_resource_key: Optional[str] = None
+    resource_group: Optional[str] = None
 
 
 class BatchPublishResult(BaseModel):
@@ -160,6 +162,30 @@ class ProductResourceLink(BaseModel):
 
 class ProductResourcesUpdate(BaseModel):
     resources: List[ProductResourceLink]
+
+
+class RedundantProductItem(BaseModel):
+    product_key: str
+    display_name: str
+    status: int
+    owner_user_id: Optional[int] = None
+    owner_name: Optional[str] = None
+    duplicate_resource_key: str
+    host_product_key: str
+    host_display_name: str
+
+
+class ArchiveRedundantResult(BaseModel):
+    archived: bool
+    product_key: str
+    host_product_key: str
+
+
+class SyncAccessResult(BaseModel):
+    has_access: bool
+    resource_keys: List[str] = Field(default_factory=list)
+    granted_count: int = 0
+    required_count: int = 0
 
 
 class DomainStat(BaseModel):

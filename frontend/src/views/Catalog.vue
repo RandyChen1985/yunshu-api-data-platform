@@ -52,6 +52,30 @@ const sortBy = ref('calls')
 const viewTab = ref<'all' | 'mine'>('all')
 const accessFilter = ref<'all' | 'yes' | 'no'>('all')
 const exporting = ref(false)
+const redundantCount = ref(0)
+
+const canManageCatalog = computed(() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('user_info') || '{}')
+    if (u.role === 'admin') return true
+    return (u.permissions?.elements || []).includes('element:catalog:manage')
+  } catch {
+    return false
+  }
+})
+
+const showRedundantBanner = computed(
+  () => redundantCount.value > 0 && (canManageCatalog.value || mineSummary.value.owned_products > 0),
+)
+
+const fetchRedundantCount = async () => {
+  try {
+    const res = await axios.get('/api/portal/catalog/products/redundant')
+    redundantCount.value = res.data.length
+  } catch {
+    redundantCount.value = 0
+  }
+}
 
 const isAdmin = computed(() => {
   try {
@@ -193,7 +217,10 @@ const {
   containerHeight: VIRTUAL_CONTAINER_HEIGHT,
 })
 
-onMounted(fetchData)
+onMounted(async () => {
+  await fetchData()
+  await fetchRedundantCount()
+})
 </script>
 
 <template>
@@ -219,6 +246,19 @@ onMounted(fetchData)
           查看资产全景 →
         </router-link>
       </div>
+    </div>
+
+    <div
+      v-if="showRedundantBanner"
+      class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+    >
+      <span>检测到 <strong>{{ redundantCount }}</strong> 个因 API 合并产生的冗余产品，建议清理以免目录重复展示。</span>
+      <router-link
+        to="/dashboard/catalog-redundant"
+        class="font-medium text-amber-800 hover:text-amber-950 whitespace-nowrap"
+      >
+        去清理 →
+      </router-link>
     </div>
 
     <!-- View tabs -->

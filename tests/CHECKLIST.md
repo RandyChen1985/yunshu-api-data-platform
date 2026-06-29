@@ -53,17 +53,23 @@
 
 | 接口路径 | 测试用例文件 | 核心场景验证 | 状态 | 最近测试日期 |
 | :------- | :----------- | :----------- | :--- | :----------- |
-| `/api/portal/catalog/products` | `test_catalog.py` | 产品列表、域筛选、权限状态、调用量聚合 | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/products/{key}` | `test_catalog.py` | 产品详情、字段说明、调用趋势 | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/panorama` | `test_catalog.py` | 资产全景 KPI、域分布、零调用告警 | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/products/publish-from-resource` | `test_catalog.py` | 从资源发布到目录、发布前校验 | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/products/batch-publish` | `test_catalog.py` | 批量上架、跳过不合规草稿并返回报告 | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/products/{key}/edit-meta` | `test_catalog.py` | 产品编辑元数据、负责人/数据集下拉 | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/access-requests` | `test_catalog.py` | 权限申请、审批通过写入 sys_user_resources | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/products/mine-summary` | `test_catalog.py` | 我的产品汇总、待审批数 | ⏳ 待验 | 2026-06-29 |
-| `/api/portal/catalog/products/export` | `test_catalog.py` | 已发布产品 CSV 导出 | ⏳ 待验 | 2026-06-29 |
+| `/api/portal/catalog/products` | `test_catalog.py` | 产品列表、域筛选、权限状态、调用量聚合、分页 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/{key}` | `test_catalog.py` | 产品详情、字段说明、调用趋势 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/panorama` | `test_catalog.py` | 资产全景 KPI、域分布、零调用告警、调用量统计 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/publish-from-resource` | `test_catalog.py` | 从资源发布到目录、发布前校验 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/batch-publish` | `test_catalog.py` | 批量上架、跳过不合规草稿并返回报告 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/{key}/edit-meta` | `test_catalog.py` | 产品编辑元数据、负责人/数据集下拉 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/access-requests` | `test_catalog.py` | 权限申请列表、审批筛选 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/access-requests/mine` | `test_catalog.py` | 当前用户提交的申请列表 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/mine-summary` | `test_catalog.py` | 我的产品汇总、待审批数 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/export` | `test_catalog.py` | 已发布产品 CSV 导出 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products?only_no_access` | `test_catalog.py` | 无权限产品筛选 | ✅ 通过 | 2026-06-29 |
-| `/api/portal/catalog/products/batch-assign-owner` | `test_catalog.py` | 批量指定负责人 | ⏳ 待验 | 2026-06-29 |
+| `/api/portal/catalog/products/batch-assign-owner` | `test_catalog.py` | 批量指定负责人 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/redundant` | `test_catalog.py` | 冗余产品检测（API 合并后） | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/{key}/resource-conflicts` | `test_catalog.py` | 编辑页关联 API 冲突检测 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/{key}/resources` | `test_catalog.py` | 多 API 关联更新 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/products/{key}/sync-access` | `test_catalog.py` | 审批通过后补写资源权限、刷新缓存 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/settings` | `test_catalog.py` | 负责人策略配置读写 | ✅ 通过 | 2026-06-29 |
 | `db-prod/V26-data-product-catalog-module.sql` | 手动 | 数据产品目录全模块 DDL（含权限申请、collation、配置种子） | ⏳ 待验 | 2026-06-29 |
 | `db-prod/V27-revoke-catalog-requests-menu-default-grant.sql` | 手动 | 撤销 menu:catalog:requests 全员默认授予 | ⏳ 待验 | 2026-06-29 |
 

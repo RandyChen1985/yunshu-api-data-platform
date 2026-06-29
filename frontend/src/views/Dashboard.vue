@@ -356,8 +356,9 @@ const menuGroups: MenuGroup[] = [
     title: '数据服务',
     items: [
       { name: '产品目录', to: '/dashboard/catalog', icon: 'catalog', perm: '', activeNames: ['Catalog', 'CatalogDetail', 'CatalogProductEdit'] },
+      { name: '我的申请', to: '/dashboard/catalog-my-applications', icon: 'catalog', perm: '', activeNames: ['CatalogMyApplications'] },
       { name: '资产全景', to: '/dashboard/asset-panorama', icon: 'panorama', perm: 'menu:asset-panorama', activeNames: ['AssetPanorama'] },
-      { name: '权限申请', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', activeNames: ['CatalogAccessRequests'] }
+      { name: '权限审批', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', activeNames: ['CatalogAccessRequests'] }
     ]
   },
   {
@@ -394,7 +395,7 @@ const isItemActive = (item: MenuItem) => {
   if (item.to === '/dashboard/metadata' && route.path.startsWith('/dashboard/metadata')) return true;
   if (item.to === '/dashboard/resources' && route.path.startsWith('/dashboard/resources')) return true;
   if (item.to === '/dashboard/catalog') {
-    return route.path === '/dashboard/catalog' || route.path.startsWith('/dashboard/catalog/')
+    return route.path === '/dashboard/catalog' || /^\/dashboard\/catalog\/[^/]+/.test(route.path)
   }
   return false;
 };

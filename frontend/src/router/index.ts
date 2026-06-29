@@ -112,6 +112,16 @@ const router = createRouter({
           component: () => import('../views/CatalogDetail.vue')
         },
         {
+          path: 'catalog-my-applications',
+          name: 'CatalogMyApplications',
+          component: () => import('../views/CatalogMyApplications.vue'),
+        },
+        {
+          path: 'catalog-redundant',
+          name: 'CatalogRedundant',
+          component: () => import('../views/CatalogRedundant.vue'),
+        },
+        {
           path: 'catalog-requests',
           name: 'CatalogAccessRequests',
           component: () => import('../views/CatalogAccessRequests.vue'),

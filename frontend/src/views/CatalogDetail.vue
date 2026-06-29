@@ -24,6 +24,7 @@ const accessHolders = ref<any[]>([])
 const isAdmin = ref(false)
 const requestMessage = ref('')
 const requesting = ref(false)
+const syncingAccess = ref(false)
 const revokingUserId = ref<number | null>(null)
 const activeTab = ref<'intro' | 'fields' | 'example' | 'stats' | 'access'>('intro')
 const exampleTab = ref<'resource' | 'query'>('resource')
@@ -109,6 +110,18 @@ const selectedResource = computed(() => {
 
 const primaryResource = computed(() => product.value?.resources?.find((r: any) => r.is_primary) || product.value?.resources?.[0])
 
+const accessBadge = computed(() => {
+  const p = product.value
+  if (!p) return { text: '', class: '' }
+  if (p.has_access) return { text: '已授权', class: 'bg-green-100 text-green-700' }
+  const st = p.access_request_status
+  if (st === 'pending') return { text: '申请审批中', class: 'bg-amber-100 text-amber-700' }
+  if (st === 'approved') return { text: '已通过，待同步', class: 'bg-green-100 text-green-700' }
+  if (st === 'rejected') return { text: '申请已拒绝', class: 'bg-gray-100 text-gray-600' }
+  if (st === 'revoked') return { text: '权限已收回', class: 'bg-red-100 text-red-700' }
+  return { text: '需申请权限', class: 'bg-amber-100 text-amber-700' }
+})
+
 const playgroundRouteFor = (r: { resource_key: string; resource_group?: string }) =>
   buildPlaygroundRoute({ resource_key: r.resource_key, resource_group: r.resource_group })
 
@@ -193,6 +206,28 @@ const submitAccessRequest = async () => {
   }
 }
 
+const syncProductAccess = async () => {
+  syncingAccess.value = true
+  try {
+    const res = await axios.post(
+      `/api/portal/catalog/products/${encodeURIComponent(productKey.value)}/sync-access`,
+    )
+    await fetchProduct()
+    if (res.data.has_access) {
+      showToast('权限已生效，可以试用 API', 'success')
+    } else {
+      showToast(
+        `已同步 ${res.data.granted_count}/${res.data.required_count} 个资源权限，如仍不可用请联系管理员`,
+        'warning',
+      )
+    }
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '权限同步失败', 'error')
+  } finally {
+    syncingAccess.value = false
+  }
+}
+
 const doRevokeUserAccess = async (userId: number) => {
   revokingUserId.value = userId
   try {
@@ -254,10 +289,11 @@ onUnmounted(() => {
               <h1 class="text-2xl font-bold text-gray-900">{{ product.display_name }}</h1>
               <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{{ product.domain }}</span>
               <span
-                :class="product.has_access ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'"
+                v-if="accessBadge.text"
+                :class="accessBadge.class"
                 class="text-xs px-2 py-1 rounded-full font-medium"
               >
-                {{ product.has_access ? '已授权' : '需申请权限' }}
+                {{ accessBadge.text }}
               </span>
               <span v-if="(product.resources?.length || 0) > 1" class="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full">
                 {{ product.resources.length }} 个 API
@@ -290,9 +326,14 @@ onUnmounted(() => {
               <span class="px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm font-medium">申请审批中</span>
             </template>
             <template v-else-if="product.access_request_status === 'approved' && !product.has_access">
-              <span class="px-4 py-2 bg-green-50 text-green-700 rounded-lg text-sm font-medium">
-                已通过，权限同步中…
-              </span>
+              <button
+                type="button"
+                class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                :disabled="syncingAccess"
+                @click="syncProductAccess"
+              >
+                {{ syncingAccess ? '同步中...' : '刷新权限' }}
+              </button>
             </template>
             <template v-else-if="product.access_request_status === 'approved' && product.has_access">
               <router-link
