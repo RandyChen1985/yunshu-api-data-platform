@@ -8,6 +8,7 @@ import {
   EllipsisVerticalIcon,
 } from '@heroicons/vue/24/outline'
 import type { Resource } from '@/types/resource'
+import { buildPlaygroundRoute } from '@/utils/playground'
 
 const props = defineProps<{
   resource: Resource
@@ -99,7 +100,7 @@ const isSystemSql = props.resource.resource_key === 'system.sql.execute'
 
     <router-link
       v-if="!isSystemSql"
-      :to="`/dashboard/playground?resource=${resource.resource_key}`"
+      :to="buildPlaygroundRoute(resource)"
       class="inline-flex items-center px-2.5 py-1 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
       title="API 调试"
     >

@@ -161,13 +161,14 @@ onBeforeRouteLeave((_to, _from, next) => {
     pendingRouteNext.value = next
     openConfirm({
         title: '未保存的更改',
-        message: '离开页面将丢失未保存的修改，确定离开吗？',
+        message: '离开将丢失未保存的修改，确定离开吗？',
         type: 'warning',
         confirmText: '离开',
         onConfirm: () => {
             confirmDialog.value.show = false
-            pendingRouteNext.value?.(true)
+            const proceed = pendingRouteNext.value
             pendingRouteNext.value = null
+            proceed?.(true)
         },
     })
     next(false)
@@ -327,20 +328,16 @@ const syncGroupPickerFromForm = () => {
 }
 
 const goBack = () => {
-    if (isDirty.value) {
-        openConfirm({
-            title: '未保存的更改',
-            message: '离开将丢失未保存的修改，确定离开吗？',
-            type: 'warning',
-            confirmText: '离开',
-            onConfirm: () => {
-                confirmDialog.value.show = false
-                router.back()
-            },
-        })
-        return
-    }
     router.back()
+}
+
+const handleLeaveConfirm = () => {
+    confirmDialog.value.onConfirm()
+}
+
+const handleLeaveCancel = () => {
+    confirmDialog.value.show = false
+    pendingRouteNext.value = null
 }
 
 const switchToTestTab = () => {
@@ -355,13 +352,17 @@ const switchToTestTab = () => {
 const fetchDataSources = async () => {
   try {
     const res = await axios.get('/api/portal/datasource/datasources?status=active')
-    availableDataSources.value = res.data        // Set default if creating new and list is not empty
-        if (!isEdit.value && availableDataSources.value.length > 0 && !form.value.data_source) {
-             form.value.data_source = availableDataSources.value[0].source_name
-        }
-    } catch (e) {
-        console.error("Failed to load datasources", e)
+    availableDataSources.value = res.data
+    if (!isEdit.value && availableDataSources.value.length > 0 && !form.value.data_source) {
+      form.value.data_source = availableDataSources.value[0].source_name
     }
+    // 默认数据源异步写入后刷新快照，避免未编辑也被判为 dirty
+    if (!isEdit.value && initialFormSnapshot.value) {
+      snapshotForm()
+    }
+  } catch (e) {
+    console.error("Failed to load datasources", e)
+  }
 }
 
 // Selectable Import Dialog State
@@ -1454,8 +1455,8 @@ const handleReady = (payload: any) => {
       :message="confirmDialog.message"
       :type="confirmDialog.type"
       :confirm-text="confirmDialog.confirmText"
-      @confirm="confirmDialog.onConfirm()"
-      @cancel="confirmDialog.show = false; pendingRouteNext = null"
+      @confirm="handleLeaveConfirm"
+      @cancel="handleLeaveCancel"
     />
   </div>
 </template>

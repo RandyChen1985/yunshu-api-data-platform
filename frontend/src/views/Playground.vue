@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ApiReference } from "@scalar/api-reference";
 import "@scalar/api-reference/style.css";
-import { computed, ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { computed, ref, onMounted, watch, nextTick } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { buildPlaygroundOperationHash } from "@/utils/playground";
 import { LockClosedIcon } from "@heroicons/vue/24/outline";
 
 const router = useRouter();
+const route = useRoute();
 const apiKey = localStorage.getItem("api_key") || "";
 const specContent = ref<any>(null);
 const isLoggedIn = ref(!!apiKey);
@@ -72,6 +74,32 @@ const configuration = computed(
       theme: "purple",
       hideDownloadButton: true,
     } as const)
+);
+
+/** 从资源列表跳转时，等 OpenAPI 加载完再定位到对应 GET 接口 */
+const applyResourceDeepLink = async () => {
+  const resourceKey = route.query.resource as string | undefined;
+  if (!resourceKey || !specContent.value) return;
+
+  const targetHash =
+    route.hash && route.hash.includes(resourceKey)
+      ? route.hash
+      : buildPlaygroundOperationHash(
+          resourceKey,
+          (route.query.group as string | undefined) ?? undefined
+        );
+
+  await nextTick();
+  if (window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
+  }
+};
+
+watch(
+  () => [specContent.value, route.query.resource, route.hash] as const,
+  () => {
+    applyResourceDeepLink();
+  }
 );
 </script>
 

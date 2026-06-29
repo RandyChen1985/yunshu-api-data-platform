@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { metadataV2Api, type Dataset } from '../api/metadata_v2'
 import axios from '../utils/axios'
@@ -8,11 +8,24 @@ import {
   TrashIcon, MagnifyingGlassIcon, Squares2X2Icon, ListBulletIcon,
   CommandLineIcon, BeakerIcon, XMarkIcon, ExclamationTriangleIcon,
   CloudArrowUpIcon, InformationCircleIcon, SparklesIcon,
-  UserIcon, ClockIcon
+  UserIcon, ClockIcon, ArrowPathIcon
 } from '@heroicons/vue/24/outline'
 import SmartImportWizard from '../components/metadata/SmartImportWizard.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useToast } from '../composables/useToast'
 import Tooltip from '../components/common/Tooltip.vue'
+
+const VECTOR_STATUS: Record<number, { label: string; class: string }> = {
+  0: { label: '未同步', class: 'bg-gray-100 text-gray-600 ring-gray-200' },
+  1: { label: '已同步', class: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  2: { label: '同步中', class: 'bg-blue-50 text-blue-700 ring-blue-200' },
+  3: { label: '同步失败', class: 'bg-red-50 text-red-700 ring-red-200' },
+  4: { label: '待更新', class: 'bg-amber-50 text-amber-700 ring-amber-200' },
+}
+
+const DEFAULT_VECTOR_META = { label: '未同步', class: 'bg-gray-100 text-gray-600 ring-gray-200' }
+
+const getVectorMeta = (status?: number) => VECTOR_STATUS[status ?? 0] ?? DEFAULT_VECTOR_META
 
 const router = useRouter()
 const { showToast } = useToast()
@@ -31,7 +44,12 @@ const datasets = ref<Dataset[]>([])
 const loading = ref(false)
 const showImportModal = ref(false)
 const searchQuery = ref('')
-const viewMode = ref<'grid' | 'list'>('grid')
+const statusFilter = ref<'ALL' | '1' | '0'>('ALL')
+const vectorFilter = ref<'ALL' | '0' | '1' | '2' | '3' | '4'>('ALL')
+const dataSourceFilter = ref('ALL')
+const viewMode = ref<'grid' | 'list'>(
+  (localStorage.getItem('metadata_view_mode') as 'grid' | 'list') || 'grid'
+)
 const showSpecModal = ref(false)
 const activeSpecTab = ref('concept')
 const showCreateModal = ref(false)
@@ -43,6 +61,18 @@ const dismissAiWarning = ref(false)
 // Delete State
 const showDeleteConfirm = ref(false)
 const deletingDataset = ref<Dataset | null>(null)
+
+const confirmDialog = ref({
+  show: false,
+  title: '',
+  message: '',
+  type: 'warning' as 'danger' | 'warning' | 'info',
+  confirmText: '确认',
+  onConfirm: () => {},
+})
+
+const canManage = computed(() => hasPerm('element:metadata:manage'))
+const canViewSimulator = computed(() => hasPerm('element:metadata:view'))
 
 // Data Source State
 const availableDataSources = ref<any[]>([])
@@ -129,13 +159,29 @@ const handleCreate = async () => {
 
 const toggleStatus = async (ds: Dataset) => {
   const newStatus = ds.status === 1 ? 0 : 1
-  try {
-    await metadataV2Api.updateDataset(ds.id, { status: newStatus })
-    ds.status = newStatus
-    showToast(`数据集已${newStatus === 1 ? '启用' : '禁用'}`, 'success')
-  } catch (e) {
-    showToast('状态更新失败', 'error')
+  const apply = async () => {
+    try {
+      await metadataV2Api.updateDataset(ds.id, { status: newStatus })
+      ds.status = newStatus
+      showToast(`数据集已${newStatus === 1 ? '启用' : '禁用'}`, 'success')
+    } catch {
+      showToast('状态更新失败', 'error')
+    }
   }
+  if (newStatus === 0) {
+    openConfirm({
+      title: '禁用数据集',
+      message: `禁用后「${ds.display_name}」将不会被 AI 检索引用，确定禁用吗？`,
+      type: 'warning',
+      confirmText: '禁用',
+      onConfirm: () => {
+        confirmDialog.value.show = false
+        apply()
+      },
+    })
+    return
+  }
+  apply()
 }
 
 const fetchDatasets = async () => {
@@ -148,6 +194,7 @@ const fetchDatasets = async () => {
     checkAndStartPolling()
   } catch (e) {
     console.error('Failed to fetch datasets', e)
+    showToast('加载数据集失败', 'error')
   } finally {
     loading.value = false
   }
@@ -178,13 +225,61 @@ const stopPolling = () => {
 }
 
 const filteredDatasets = computed(() => {
-  if (!searchQuery.value) return datasets.value
-  const q = searchQuery.value.toLowerCase()
-  return datasets.value.filter(ds => 
-    ds.name.toLowerCase().includes(q) || 
-    ds.display_name.toLowerCase().includes(q)
-  )
+  const q = searchQuery.value.trim().toLowerCase()
+  return datasets.value.filter((ds) => {
+    const matchesSearch =
+      !q ||
+      ds.name.toLowerCase().includes(q) ||
+      ds.display_name.toLowerCase().includes(q) ||
+      (ds.description || '').toLowerCase().includes(q) ||
+      (ds.data_source || '').toLowerCase().includes(q) ||
+      (ds.tags || []).some((t) => t.toLowerCase().includes(q))
+    const matchesStatus = statusFilter.value === 'ALL' || String(ds.status) === statusFilter.value
+    const matchesVector =
+      vectorFilter.value === 'ALL' || String(ds.vector_status ?? 0) === vectorFilter.value
+    const matchesDataSource =
+      dataSourceFilter.value === 'ALL' || ds.data_source === dataSourceFilter.value
+    return matchesSearch && matchesStatus && matchesVector && matchesDataSource
+  })
 })
+
+const hasActiveFilters = computed(
+  () =>
+    !!searchQuery.value.trim() ||
+    statusFilter.value !== 'ALL' ||
+    vectorFilter.value !== 'ALL' ||
+    dataSourceFilter.value !== 'ALL'
+)
+
+const dataSourceOptions = computed(() => {
+  const set = new Set(datasets.value.map((d) => d.data_source).filter(Boolean))
+  return Array.from(set).sort()
+})
+
+const stats = computed(() => {
+  const total = datasets.value.length
+  const active = datasets.value.filter((d) => d.status === 1).length
+  const synced = datasets.value.filter((d) => d.vector_status === 1).length
+  const pending = datasets.value.filter((d) => (d.vector_status ?? 0) === 4 || (d.vector_status ?? 0) === 0).length
+  return { total, active, synced, pending }
+})
+
+const openConfirm = (opts: {
+  title: string
+  message: string
+  type?: 'danger' | 'warning' | 'info'
+  confirmText?: string
+  onConfirm: () => void
+}) => {
+  confirmDialog.value = {
+    show: true,
+    title: opts.title,
+    message: opts.message,
+    type: opts.type || 'warning',
+    confirmText: opts.confirmText || '确认',
+    onConfirm: opts.onConfirm,
+  }
+}
 
 const openDeleteModal = (ds: Dataset) => {
   deletingDataset.value = ds
@@ -237,6 +332,10 @@ onMounted(() => {
   fetchDataSources()
   checkVectorSupport()
   checkAiStatus()
+})
+
+watch(viewMode, (mode) => {
+  localStorage.setItem('metadata_view_mode', mode)
 })
 
 onUnmounted(stopPolling)
@@ -300,9 +399,18 @@ onUnmounted(stopPolling)
         </h1>
         <p class="text-sm text-gray-500 mt-1">管理 AI 用于 Text2SQL 生成的业务知识库</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex gap-2 flex-wrap">
+        <button
+          type="button"
+          class="bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 px-3 py-2 rounded-lg transition-all flex items-center gap-2 font-medium text-sm shadow-sm"
+          :disabled="loading"
+          @click="fetchDatasets"
+        >
+          <ArrowPathIcon class="w-4 h-4" :class="loading ? 'animate-spin' : ''" />
+          刷新
+        </button>
         <button 
-          v-if="hasPerm('element:metadata:view')"
+          v-if="canViewSimulator"
           @click="router.push('/dashboard/metadata/simulator')"
           class="bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-lg transition-all flex items-center gap-2 font-medium text-sm shadow-sm"
         >
@@ -317,7 +425,7 @@ onUnmounted(stopPolling)
           设计规范
         </button>
         <button 
-          v-if="hasPerm('element:metadata:manage')"
+          v-if="canManage"
           @click="showImportModal = true"
           :disabled="!isAiEnabled"
           class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-md transition-all active:scale-95 text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -326,7 +434,7 @@ onUnmounted(stopPolling)
           智能导入
         </button>
         <button 
-          v-if="hasPerm('element:metadata:manage')"
+          v-if="canManage"
           @click="showCreateModal = true"
           class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-md transition-all active:scale-95 text-sm font-medium flex items-center gap-2"
         >
@@ -336,22 +444,64 @@ onUnmounted(stopPolling)
       </div>
     </div>
 
+    <!-- Stats -->
+    <div v-if="!loading && datasets.length > 0" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+        <p class="text-xs text-gray-500">全部数据集</p>
+        <p class="text-2xl font-bold text-gray-900">{{ stats.total }}</p>
+      </div>
+      <div class="bg-white border border-green-200 rounded-lg px-4 py-3 bg-green-50/40">
+        <p class="text-xs text-green-700">已启用</p>
+        <p class="text-2xl font-bold text-green-700">{{ stats.active }}</p>
+      </div>
+      <div class="bg-white border border-emerald-200 rounded-lg px-4 py-3">
+        <p class="text-xs text-emerald-700">向量已同步</p>
+        <p class="text-2xl font-bold text-emerald-700">{{ stats.synced }}</p>
+      </div>
+      <div class="bg-white border border-amber-200 rounded-lg px-4 py-3">
+        <p class="text-xs text-amber-700">待同步/待更新</p>
+        <p class="text-2xl font-bold text-amber-700">{{ stats.pending }}</p>
+      </div>
+    </div>
+
     <!-- Toolbar -->
-    <div class="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-       <div class="relative w-full sm:w-96">
+    <div class="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+       <div class="relative flex-1 min-w-[200px] max-w-xl">
           <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
              <MagnifyingGlassIcon class="h-4 w-4" />
           </span>
           <input 
             v-model="searchQuery" 
             class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none sm:text-sm bg-gray-50" 
-            placeholder="搜索数据集名称或描述..."
+            placeholder="搜索名称、编码、描述、数据源、标签..."
           >
        </div>
-       
-       <div class="flex bg-gray-100 p-1 rounded-lg">
-          <button @click="viewMode = 'grid'" :class="viewMode === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'" class="p-1.5 rounded-md transition-all"><Squares2X2Icon class="w-4 h-4" /></button>
-          <button @click="viewMode = 'list'" :class="viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'" class="p-1.5 rounded-md transition-all"><ListBulletIcon class="w-4 h-4" /></button>
+
+       <div class="flex flex-wrap items-center gap-2">
+          <select v-model="statusFilter" class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white">
+            <option value="ALL">全部状态</option>
+            <option value="1">已启用</option>
+            <option value="0">已禁用</option>
+          </select>
+          <select v-model="vectorFilter" class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white">
+            <option value="ALL">全部向量状态</option>
+            <option value="1">已同步</option>
+            <option value="0">未同步</option>
+            <option value="4">待更新</option>
+            <option value="2">同步中</option>
+            <option value="3">同步失败</option>
+          </select>
+          <select v-if="dataSourceOptions.length > 1" v-model="dataSourceFilter" class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white max-w-[160px]">
+            <option value="ALL">全部数据源</option>
+            <option v-for="ds in dataSourceOptions" :key="ds" :value="ds">{{ ds }}</option>
+          </select>
+          <p v-if="hasActiveFilters" class="text-xs text-gray-400 whitespace-nowrap">
+            {{ filteredDatasets.length }} / {{ datasets.length }} 项
+          </p>
+          <div class="flex bg-gray-100 p-1 rounded-lg ml-auto lg:ml-0">
+            <button type="button" @click="viewMode = 'grid'" :class="viewMode === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'" class="p-1.5 rounded-md transition-all" title="卡片视图"><Squares2X2Icon class="w-4 h-4" /></button>
+            <button type="button" @click="viewMode = 'list'" :class="viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'" class="p-1.5 rounded-md transition-all" title="列表视图"><ListBulletIcon class="w-4 h-4" /></button>
+          </div>
        </div>
     </div>
 
@@ -374,7 +524,7 @@ onUnmounted(stopPolling)
               <div class="flex items-center gap-1">
                 <!-- Vector Sync Action -->
                 <Tooltip 
-                  v-if="hasPerm('element:metadata:manage')"
+                  v-if="canManage"
                   :text="!isAiEnabled ? 'AI 功能未开启' : 
                          !isVectorSupported ? 'Redis 不支持向量搜索' : 
                          ds.vector_status === 1 ? '已同步至语义库 (点击可重新同步)' : 
@@ -402,7 +552,7 @@ onUnmounted(stopPolling)
                   </button>
                 </Tooltip>
                 <button 
-                  v-if="hasPerm('element:metadata:manage')"
+                  v-if="canManage"
                   @click.stop="openDeleteModal(ds)"
                   class="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
                 >
@@ -419,6 +569,12 @@ onUnmounted(stopPolling)
                 <CircleStackIcon class="w-3 h-3 opacity-70" />
                 {{ ds.data_source }}
               </div>
+              <span
+                class="px-2 py-1 rounded-lg text-[10px] font-bold ring-1"
+                :class="getVectorMeta(ds.vector_status).class"
+              >
+                {{ getVectorMeta(ds.vector_status).label }}
+              </span>
               <div class="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-[10px] font-bold border border-blue-100">
                 表:{{ ds.table_count || 0 }}
               </div>
@@ -435,7 +591,7 @@ onUnmounted(stopPolling)
            <div class="mt-auto pt-4 border-t border-gray-100 flex justify-between items-center">
               <!-- Left: Status Toggle -->
               <Tooltip 
-                v-if="hasPerm('element:metadata:manage')"
+                v-if="canManage"
                 :text="`当前状态: ${ds.status === 1 ? '已启用 (可被 AI 检索)' : '已禁用 (AI 不可见)'}`"
                 position="top"
               >
@@ -482,7 +638,8 @@ onUnmounted(stopPolling)
                 <th class="px-6 py-4 text-left">数据集名称</th>
                 <th class="px-6 py-4 text-left">创建人</th>
                 <th class="px-6 py-4 text-left">关联数据源</th>
-                <th class="px-6 py-4 text-center">状态</th>
+                <th class="px-6 py-4 text-center">启用</th>
+                <th class="px-6 py-4 text-center">向量状态</th>
                 <th class="px-6 py-4 text-center">统计</th>
                 <th class="px-6 py-4 text-left">创建日期</th>
                 <th class="px-6 py-4 text-right">操作</th>
@@ -514,12 +671,16 @@ onUnmounted(stopPolling)
                    </span>
                 </td>
                 <td class="px-6 py-4 text-center">
-                   <!-- Simplified Status -->
-                   <span 
-                     class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest border"
+                   <span
+                     class="px-2 py-0.5 rounded text-[10px] font-bold border"
                      :class="ds.status === 1 ? 'bg-green-50 text-green-600 border-green-100' : 'bg-gray-50 text-gray-400 border-gray-200'"
                    >
-                     {{ ds.status === 1 ? 'Active' : 'Inactive' }}
+                     {{ ds.status === 1 ? '已启用' : '已禁用' }}
+                   </span>
+                </td>
+                <td class="px-6 py-4 text-center">
+                   <span class="px-2 py-0.5 rounded text-[10px] font-bold ring-1" :class="getVectorMeta(ds.vector_status).class">
+                     {{ getVectorMeta(ds.vector_status).label }}
                    </span>
                 </td>
                 <td class="px-6 py-4">
@@ -530,10 +691,17 @@ onUnmounted(stopPolling)
                    </div>
                 </td>
                 <td class="px-6 py-4 text-xs text-gray-500 font-mono tracking-tighter">{{ ds.created_at ? new Date(ds.created_at).toLocaleDateString() : '-' }}</td>
-                <td class="px-6 py-4 text-right">
+                <td class="px-6 py-4 text-right" @click.stop>
                    <div class="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        class="px-2 py-1 text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-md"
+                        @click="router.push(`/dashboard/metadata/${ds.id}`)"
+                      >
+                        详情
+                      </button>
                       <Tooltip 
-                        v-if="hasPerm('element:metadata:manage')"
+                        v-if="canManage"
                         :text="!isAiEnabled ? 'AI 功能未开启' : 
                                !isVectorSupported ? 'Redis 不支持向量搜索' : 
                                ds.vector_status === 1 ? '已同步' : 
@@ -559,7 +727,7 @@ onUnmounted(stopPolling)
                           <span v-if="ds.vector_status === 2" class="absolute -top-0.5 -right-0.5 w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
                         </button>
                       </Tooltip>
-                      <button v-if="hasPerm('element:metadata:manage')" @click.stop="openDeleteModal(ds)" class="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><TrashIcon class="w-5 h-5" /></button>
+                      <button v-if="canManage" @click.stop="openDeleteModal(ds)" class="p-1.5 text-gray-400 hover:text-red-600 transition-colors"><TrashIcon class="w-5 h-5" /></button>
                    </div>
                 </td>
              </tr>
@@ -567,8 +735,16 @@ onUnmounted(stopPolling)
        </table>
     </div>
 
+    <!-- No filter results -->
+    <div v-else-if="!loading && datasets.length > 0 && filteredDatasets.length === 0" class="text-center py-16 bg-white rounded-xl border border-gray-200">
+      <p class="text-gray-500 text-sm">没有匹配的数据集，请调整搜索或筛选条件</p>
+      <button type="button" class="mt-3 text-sm text-indigo-600 hover:underline" @click="searchQuery = ''; statusFilter = 'ALL'; vectorFilter = 'ALL'; dataSourceFilter = 'ALL'">
+        清除筛选
+      </button>
+    </div>
+
     <!-- Empty State -->
-    <div v-else-if="!loading" class="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-gray-200">
+    <div v-else-if="!loading && datasets.length === 0" class="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-gray-200">
       <div class="relative inline-block mb-6">
         <div class="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-5xl">📂</div>
         <div class="absolute -top-2 -right-2 w-8 h-8 bg-amber-400 rounded-lg flex items-center justify-center animate-bounce shadow-lg border-2 border-white">
@@ -577,7 +753,7 @@ onUnmounted(stopPolling)
       </div>
       <h3 class="text-xl font-black text-gray-900 tracking-tight">AI 的语义大脑还是空的</h3>
       <p class="text-sm text-gray-400 mt-2 mb-8 max-w-sm mx-auto">导入数据库 DDL 或手动创建数据集，为 AI 助手注入专业的业务知识和数据模型逻辑。</p>
-      <button v-if="hasPerm('element:metadata:manage')" @click="showImportModal = true" class="bg-indigo-600 text-white px-10 py-3 rounded-xl hover:bg-indigo-700 transition shadow-xl font-bold active:scale-95">
+      <button v-if="canManage" @click="showImportModal = true" class="bg-indigo-600 text-white px-10 py-3 rounded-xl hover:bg-indigo-700 transition shadow-xl font-bold active:scale-95">
         立即开启智能建模
       </button>
     </div>
@@ -921,6 +1097,16 @@ relationships:
         </div>
       </div>
     </div>
+
+    <ConfirmDialog
+      :show="confirmDialog.show"
+      :title="confirmDialog.title"
+      :message="confirmDialog.message"
+      :type="confirmDialog.type"
+      :confirm-text="confirmDialog.confirmText"
+      @confirm="confirmDialog.onConfirm()"
+      @cancel="confirmDialog.show = false"
+    />
   </div>
 </template>
 
