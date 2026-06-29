@@ -220,7 +220,7 @@ onMounted(async () => {
         <button
           v-if="canExport"
           :disabled="exporting"
-          class="text-sm border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          class="hidden sm:inline-flex text-sm border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50"
           @click="exportCatalog"
         >
           {{ exporting ? '导出中...' : '导出清单' }}

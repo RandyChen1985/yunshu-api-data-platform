@@ -5,6 +5,10 @@ import Overview from '../views/Overview.vue'
 import AuditLogs from '../views/AuditLogs.vue'
 import Playground from '../views/Playground.vue'
 import Users from '../views/Users.vue'
+import { MOBILE_LAYOUT_BREAKPOINT } from '../composables/useMobileLayout'
+
+const isMobileViewport = () =>
+  typeof window !== 'undefined' && window.innerWidth < MOBILE_LAYOUT_BREAKPOINT
 
 const router = createRouter({
   history: createWebHistory(),
@@ -40,61 +44,61 @@ const router = createRouter({
           path: 'audit',
           name: 'Audit',
           component: AuditLogs,
-          meta: { menuCode: 'menu:audit' }
+          meta: { menuCode: 'menu:audit', desktopOnly: true }
         },
         {
           path: 'playground',
           name: 'Playground',
           component: Playground,
-          meta: { menuCode: 'menu:playground' }
+          meta: { menuCode: 'menu:playground', desktopOnly: true }
         },
         {
           path: 'lab',
           name: 'SQLLab',
           component: () => import('../views/SQLLab.vue'),
-          meta: { menuCode: 'menu:lab' }
+          meta: { menuCode: 'menu:lab', desktopOnly: true }
         },
         {
           path: 'developer',
           name: 'DeveloperPortal',
           component: () => import('../views/developer/DeveloperPortal.vue'),
-          meta: { menuCode: 'menu:developer' }
+          meta: { menuCode: 'menu:developer', desktopOnly: true }
         },
         {
           path: 'datasources',
           name: 'DataSourceList',
           component: () => import('../views/datasource/DataSourceList.vue'),
-          meta: { menuCode: 'menu:datasource' }
+          meta: { menuCode: 'menu:datasource', desktopOnly: true }
         },
         {
           path: 'resources',
           name: 'Resources',
           component: () => import('../views/resources/ResourceList.vue'),
-          meta: { menuCode: 'menu:resources' }
+          meta: { menuCode: 'menu:resources', desktopOnly: true }
         },
         {
           path: 'resources/:key',
           name: 'ResourceEdit',
           component: () => import('../views/resources/ResourceEdit.vue'),
-          meta: { menuCode: 'menu:resources' }
+          meta: { menuCode: 'menu:resources', desktopOnly: true }
         },
         {
           path: 'metadata',
           name: 'MetadataCenter',
           component: () => import('../views/MetadataCenter.vue'),
-          meta: { menuCode: 'menu:metadata' }
+          meta: { menuCode: 'menu:metadata', desktopOnly: true }
         },
         {
           path: 'metadata/:id',
           name: 'MetadataDetail',
           component: () => import('../views/MetadataDetail.vue'),
-          meta: { menuCode: 'menu:metadata' }
+          meta: { menuCode: 'menu:metadata', desktopOnly: true }
         },
         {
           path: 'metadata/simulator',
           name: 'SearchSimulator',
           component: () => import('../views/SearchSimulator.vue'),
-          meta: { menuCode: 'menu:metadata' }
+          meta: { menuCode: 'menu:metadata', desktopOnly: true }
         },
         {
           path: 'catalog',
@@ -120,6 +124,7 @@ const router = createRouter({
           path: 'catalog-redundant',
           name: 'CatalogRedundant',
           component: () => import('../views/CatalogRedundant.vue'),
+          meta: { desktopOnly: true },
         },
         {
           path: 'catalog-requests',
@@ -138,6 +143,11 @@ const router = createRouter({
           name: 'SystemSettings',
           component: () => import('../views/SystemConfig.vue'),
           meta: { menuCode: 'menu:config' }
+        },
+        {
+          path: 'personal',
+          name: 'PersonalCenter',
+          component: () => import('../views/PersonalCenter.vue'),
         },
         {
           path: '403',
@@ -159,6 +169,13 @@ router.beforeEach(async (to: any, _from: any, next: any) => {
   if (to.name !== 'Login' && !isAuthenticated) {
     next({ name: 'Login' })
     return
+  }
+
+  if (isAuthenticated && isMobileViewport()) {
+    if (to.meta?.desktopOnly) {
+      next({ name: 'Catalog' })
+      return
+    }
   }
 
   // Permission Check
@@ -208,12 +225,11 @@ router.beforeEach(async (to: any, _from: any, next: any) => {
         // try to redirect to the first accessible page instead of Forbidden.
         if (to.name === 'Overview' && userRole !== 'admin') {
           const allRoutes = router.getRoutes()
-          // Find first route that has a menuCode present in userMenus
-          // We filter for routes that are children of Dashboard usually, or just check menuCode
           const firstAllowed = allRoutes.find(r => 
             r.meta?.menuCode && 
             userMenus.includes(r.meta.menuCode as string) &&
-            r.name !== 'Overview' // Avoid infinite loop if somehow logic is flawed (though includes check prevents it)
+            r.name !== 'Overview' &&
+            !r.meta?.desktopOnly
           )
           
           if (firstAllowed) {

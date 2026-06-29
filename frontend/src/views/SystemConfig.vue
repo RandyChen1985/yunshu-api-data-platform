@@ -39,6 +39,23 @@ import {
   ShieldCheckIcon
 } from '@heroicons/vue/24/outline'
 const activeTab = ref<'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'catalog'>('monitor')
+
+const settingsTabs = [
+  { id: 'monitor' as const, label: '系统监控' },
+  { id: 'ratelimit' as const, label: '流控设置' },
+  { id: 'diagnostic' as const, label: '系统诊断' },
+  { id: 'pools' as const, label: '连接池监控' },
+  { id: 'logs' as const, label: '日志管理' },
+  { id: 'ai' as const, label: 'AI 模型' },
+  { id: 'masking' as const, label: '数据脱敏' },
+  { id: 'catalog' as const, label: '数据产品目录' },
+]
+
+type SettingsTabId = (typeof settingsTabs)[number]['id']
+
+const onMobileTabChange = (e: Event) => {
+  switchTab((e.target as HTMLSelectElement).value as SettingsTabId)
+}
 const logSubTab = ref<'tasks' | 'shards'>('tasks')
 const logs = ref<string[]>([])
 const maintenanceLogs = ref<any[]>([])
@@ -659,34 +676,49 @@ const formatDateTime = (val: string) => {
 <template>
   <div class="space-y-6">
     <div class="flex justify-between items-center">
-      <h1 class="text-2xl font-semibold text-gray-900">系统配置与诊断</h1>
+      <h1 class="text-lg sm:text-2xl font-semibold text-gray-900">系统配置与诊断</h1>
     </div>
 
-    <!-- Tabs -->
-    <div class="border-b border-gray-200">
-      <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-        <button @click="switchTab('monitor')" :class="[activeTab === 'monitor' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+    <!-- Mobile: tab selector -->
+    <div class="lg:hidden">
+      <label for="settings-tab-select" class="sr-only">设置分区</label>
+      <select
+        id="settings-tab-select"
+        :value="activeTab"
+        class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+        @change="onMobileTabChange"
+      >
+        <option v-for="tab in settingsTabs" :key="tab.id" :value="tab.id">
+          {{ tab.label }}
+        </option>
+      </select>
+    </div>
+
+    <!-- Desktop: tabs -->
+    <div class="hidden lg:block border-b border-gray-200">
+      <nav class="-mb-px flex space-x-6 overflow-x-auto custom-scrollbar" aria-label="Tabs">
+        <button @click="switchTab('monitor')" :class="[activeTab === 'monitor' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <BoltIcon class="h-5 w-5 mr-2" /> 系统监控
         </button>
-        <button @click="switchTab('ratelimit')" :class="[activeTab === 'ratelimit' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+        <button @click="switchTab('ratelimit')" :class="[activeTab === 'ratelimit' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <AdjustmentsHorizontalIcon class="h-5 w-5 mr-2" /> 流控设置
         </button>
-        <button @click="switchTab('diagnostic')" :class="[activeTab === 'diagnostic' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+        <button @click="switchTab('diagnostic')" :class="[activeTab === 'diagnostic' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <CommandLineIcon class="h-5 w-5 mr-2" /> 系统诊断
         </button>
-        <button @click="switchTab('pools')" :class="[activeTab === 'pools' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+        <button @click="switchTab('pools')" :class="[activeTab === 'pools' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <ServerIcon class="h-5 w-5 mr-2" /> 连接池监控
         </button>
-        <button @click="switchTab('logs')" :class="[activeTab === 'logs' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+        <button @click="switchTab('logs')" :class="[activeTab === 'logs' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <ClockIcon class="h-5 w-5 mr-2" /> 日志管理
         </button>
-        <button @click="switchTab('ai')" :class="[activeTab === 'ai' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+        <button @click="switchTab('ai')" :class="[activeTab === 'ai' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <SparklesIcon class="h-5 w-5 mr-2" /> AI 模型
         </button>
-        <button @click="switchTab('masking')" :class="[activeTab === 'masking' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+        <button @click="switchTab('masking')" :class="[activeTab === 'masking' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <ShieldCheckIcon class="h-5 w-5 mr-2" /> 数据脱敏
         </button>
-        <button @click="switchTab('catalog')" :class="[activeTab === 'catalog' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+        <button @click="switchTab('catalog')" :class="[activeTab === 'catalog' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <CircleStackIcon class="h-5 w-5 mr-2" /> 数据产品目录
         </button>
       </nav>

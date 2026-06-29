@@ -13,7 +13,7 @@
 
     <!-- Header -->
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-semibold text-gray-900">
+      <h1 class="text-lg sm:text-2xl font-semibold text-gray-900">
         {{ userInfo?.role === "admin" ? "系统概览" : "我的工作台" }}
       </h1>
       <div class="flex items-center space-x-3">
@@ -289,29 +289,29 @@
       </transition-group>
 
       <!-- Trend Chart (New Section) -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center space-x-4">
-            <h2 class="text-lg font-medium text-gray-900">请求趋势</h2>
+      <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:space-x-4">
+            <h2 class="text-sm sm:text-lg font-medium text-gray-900 shrink-0">请求趋势</h2>
             <!-- Tab Switcher -->
-            <div class="flex p-1 bg-gray-100 rounded-lg">
+            <div class="flex p-0.5 sm:p-1 bg-gray-100 rounded-lg w-fit">
               <button 
                 @click="trendTimeframe = '24h'"
-                class="px-4 py-1 text-sm font-medium rounded-md transition-all duration-200"
+                class="px-2 sm:px-4 py-0.5 sm:py-1 text-xs sm:text-sm font-medium rounded-md transition-all duration-200"
                 :class="trendTimeframe === '24h' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'"
               >
                 近 24 小时
               </button>
               <button 
                 @click="trendTimeframe = '7d'"
-                class="px-4 py-1 text-sm font-medium rounded-md transition-all duration-200"
+                class="px-2 sm:px-4 py-0.5 sm:py-1 text-xs sm:text-sm font-medium rounded-md transition-all duration-200"
                 :class="trendTimeframe === '7d' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'"
               >
                 近 7 天
               </button>
             </div>
           </div>
-          <span class="text-xs text-gray-400">更新时间: {{ new Date().toLocaleTimeString() }}</span>
+          <span class="text-[10px] sm:text-xs text-gray-400 shrink-0">更新时间: {{ new Date().toLocaleTimeString() }}</span>
         </div>
         <div class="h-80 w-full relative">
            <!-- Chart Loading Overlay -->
@@ -328,12 +328,12 @@
       <!-- Interface Resource Analysis (New) -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Hot Ranking Bar Chart -->
-        <div class="lg:col-span-2 bg-white rounded-lg shadow p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-medium text-gray-900 flex items-center gap-3">
-              活跃排行 (TOP 10)
+        <div class="lg:col-span-2 bg-white rounded-lg shadow p-4 sm:p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
+              <h2 class="text-sm sm:text-lg font-medium text-gray-900 shrink-0">活跃排行 (TOP 10)</h2>
               <!-- Ranking Tab -->
-              <div class="flex p-0.5 bg-gray-100 rounded-lg text-xs">
+              <div class="flex p-0.5 bg-gray-100 rounded-lg text-xs w-fit">
                 <button 
                   @click="rankingType = 'resource'"
                   class="px-3 py-1 font-medium rounded-md transition-all duration-200"
@@ -349,8 +349,8 @@
                   按用户
                 </button>
               </div>
-            </h2>
-            <div class="flex space-x-2">
+            </div>
+            <div class="flex space-x-2 shrink-0">
                <div class="flex items-center text-xs text-gray-500">
                   <span class="w-3 h-3 rounded-sm mr-1" :class="rankingType === 'resource' ? 'bg-indigo-500' : 'bg-green-500'"></span>
                   调用量
@@ -372,7 +372,7 @@
         <!-- Resource Performance Table -->
         <div class="bg-white rounded-lg shadow overflow-hidden flex flex-col">
           <div class="px-6 py-4 border-b border-gray-200">
-            <h3 class="text-lg font-medium text-gray-900">接口性能分布</h3>
+            <h3 class="text-sm sm:text-lg font-medium text-gray-900">接口性能分布</h3>
           </div>
           <div class="flex-1 overflow-auto custom-scrollbar">
             <table class="min-w-full divide-y divide-gray-200">
@@ -416,7 +416,7 @@
 
       <!-- Quick Actions -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-medium text-gray-900 mb-4">快捷操作</h2>
+        <h2 class="text-sm sm:text-lg font-medium text-gray-900 mb-4">快捷操作</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <router-link
             to="/dashboard/users"
@@ -494,7 +494,7 @@
         <!-- Recent Users -->
         <div class="bg-white rounded-lg shadow">
           <div class="px-6 py-4 border-b border-gray-200">
-            <h3 class="text-lg font-medium text-gray-900">最新用户</h3>
+            <h3 class="text-sm sm:text-lg font-medium text-gray-900">最新用户</h3>
           </div>
           <div class="p-6">
             <div v-if="activities?.recent_users?.length > 0" class="space-y-4">
@@ -530,7 +530,7 @@
         <!-- Recent API Calls -->
         <div class="bg-white rounded-lg shadow">
           <div class="px-6 py-4 border-b border-gray-200">
-            <h3 class="text-lg font-medium text-gray-900">最近调用</h3>
+            <h3 class="text-sm sm:text-lg font-medium text-gray-900">最近调用</h3>
           </div>
           <div class="p-6">
             <div v-if="activities?.recent_calls?.length > 0" class="space-y-3">
@@ -751,28 +751,28 @@
       </transition-group>
 
       <!-- User Trend Chart (New Section) -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center space-x-4">
-            <h2 class="text-lg font-medium text-gray-900">请求趋势</h2>
-            <div class="flex p-1 bg-gray-100 rounded-lg">
+      <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:space-x-4">
+            <h2 class="text-sm sm:text-lg font-medium text-gray-900 shrink-0">请求趋势</h2>
+            <div class="flex p-0.5 sm:p-1 bg-gray-100 rounded-lg w-fit">
               <button 
                 @click="trendTimeframe = '24h'"
-                class="px-4 py-1 text-sm font-medium rounded-md transition-all duration-200"
+                class="px-2 sm:px-4 py-0.5 sm:py-1 text-xs sm:text-sm font-medium rounded-md transition-all duration-200"
                 :class="trendTimeframe === '24h' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'"
               >
                 近 24 小时
               </button>
               <button 
                 @click="trendTimeframe = '7d'"
-                class="px-4 py-1 text-sm font-medium rounded-md transition-all duration-200"
+                class="px-2 sm:px-4 py-0.5 sm:py-1 text-xs sm:text-sm font-medium rounded-md transition-all duration-200"
                 :class="trendTimeframe === '7d' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'"
               >
                 近 7 天
               </button>
             </div>
           </div>
-          <span class="text-xs text-gray-400">更新时间: {{ new Date().toLocaleTimeString() }}</span>
+          <span class="text-[10px] sm:text-xs text-gray-400 shrink-0">更新时间: {{ new Date().toLocaleTimeString() }}</span>
         </div>
         <div class="h-80 w-full relative">
            <div v-if="loadingTrend" class="absolute inset-0 z-10 bg-white bg-opacity-60 flex items-center justify-center">
@@ -787,8 +787,8 @@
 
       <!-- Interface Resource Analysis (User View) -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-2 bg-white rounded-lg shadow p-6">
-          <h2 class="text-lg font-medium text-gray-900 mb-4">我的活跃接口 (TOP 10)</h2>
+        <div class="lg:col-span-2 bg-white rounded-lg shadow p-4 sm:p-6">
+          <h2 class="text-sm sm:text-lg font-medium text-gray-900 mb-4">我的活跃接口 (TOP 10)</h2>
           <div class="h-80 w-full relative">
             <div v-if="loadingResources" class="absolute inset-0 z-10 bg-white bg-opacity-60 flex items-center justify-center">
                 <svg class="animate-spin h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24">
@@ -803,7 +803,7 @@
 
         <div class="bg-white rounded-lg shadow overflow-hidden flex flex-col">
           <div class="px-6 py-4 border-b border-gray-200">
-            <h3 class="text-lg font-medium text-gray-900">我的接口性能</h3>
+            <h3 class="text-sm sm:text-lg font-medium text-gray-900">我的接口性能</h3>
           </div>
           <div class="flex-1 overflow-auto custom-scrollbar">
             <table class="min-w-full divide-y divide-gray-200">
@@ -841,7 +841,7 @@
 
       <!-- Quick Start -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-lg font-medium text-gray-900 mb-4">快速开始</h2>
+        <h2 class="text-sm sm:text-lg font-medium text-gray-900 mb-4">快速开始</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="border-2 border-gray-200 rounded-lg p-4">
             <div class="flex items-center mb-3">
@@ -905,7 +905,7 @@
       <!-- My Recent Calls -->
       <div class="bg-white rounded-lg shadow">
         <div class="px-6 py-4 border-b border-gray-200">
-          <h3 class="text-lg font-medium text-gray-900">我的最近调用</h3>
+          <h3 class="text-sm sm:text-lg font-medium text-gray-900">我的最近调用</h3>
         </div>
         <div class="p-6">
           <div v-if="activities?.recent_calls?.length > 0" class="space-y-3">

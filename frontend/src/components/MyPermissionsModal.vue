@@ -1,60 +1,82 @@
 <template>
   <div v-if="isOpen" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <div @click="close" class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+    <div class="flex min-h-screen items-end sm:items-center justify-center p-0 sm:p-4 text-center sm:text-left">
+      <div @click="close" class="fixed inset-0 bg-gray-500/75 transition-opacity" aria-hidden="true"></div>
 
-      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-          <div class="sm:flex sm:items-start">
-            <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-              <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div class="relative inline-flex w-full flex-col bg-white text-left shadow-xl sm:my-8 sm:max-w-4xl sm:rounded-lg sm:align-middle max-h-[100dvh] sm:max-h-[90vh] overflow-hidden">
+        <div class="bg-white px-4 pt-4 pb-3 sm:p-6 sm:pb-4 flex-1 min-h-0 flex flex-col">
+          <div class="flex items-start gap-3 sm:gap-4 shrink-0">
+            <div class="flex-shrink-0 flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-blue-100">
+              <svg class="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 14l-1 1-1 1H3m9-9a6 6 0 019 9h9v1.8c0 .249-.088.485-.246.663l-4 4.062C8.6 20.2 8.3 20.3 8 20.5l-5-5-5-5L15 7z" />
               </svg>
             </div>
-            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <div class="flex justify-between items-center pr-6">
-                  <h3 class="text-lg font-bold text-gray-900" id="modal-title">
-                    我的权限资产库
-                  </h3>
-              </div>
+            <div class="flex-1 min-w-0 text-left">
+              <h3 class="text-base sm:text-lg font-bold text-gray-900 truncate" id="modal-title">
+                我的权限资产库
+              </h3>
+              <p class="text-xs text-gray-500 mt-0.5 sm:hidden">查看接口资源、数据资产与安全策略</p>
+            </div>
+            <button
+              type="button"
+              class="sm:hidden p-1.5 text-gray-400 hover:text-gray-600 rounded-lg shrink-0"
+              aria-label="关闭"
+              @click="close"
+            >
+              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
-              <!-- Main Tabs -->
-              <div class="flex border-b border-gray-200 mt-4 pr-6">
-                <button @click="activeTab = 'resource'" class="px-4 py-2 text-sm font-bold border-b-2 transition-all" :class="activeTab === 'resource' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
-                  接口资源 ({{ resources.length }})
-                </button>
-                <button @click="activeTab = 'data'" class="px-4 py-2 text-sm font-bold border-b-2 transition-all" :class="activeTab === 'data' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
-                  数据资产 ({{ datasourceList.length }})
-                </button>
-                <button @click="activeTab = 'security'" class="px-4 py-2 text-sm font-bold border-b-2 transition-all" :class="activeTab === 'security' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
-                  安全策略
-                </button>
-              </div>
-              
-              <div v-if="activeTab === 'resource'" class="mt-4 pr-6">
-                <!-- Search Filter -->
-                <div class="relative rounded-md shadow-sm">
-                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                  </div>
-                  <input 
-                    type="text" 
-                    v-model="searchQuery"
-                    class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2" 
-                    placeholder="搜索资源名称、Key 或分组..." 
-                  />
-                </div>
-              </div>
+          <!-- Mobile: tab selector -->
+          <div class="mt-3 sm:hidden shrink-0">
+            <label for="perm-tab-select" class="sr-only">权限分区</label>
+            <select
+              id="perm-tab-select"
+              v-model="activeTab"
+              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value="resource">接口资源 ({{ resources.length }})</option>
+              <option value="data">数据资产 ({{ datasourceList.length }})</option>
+              <option value="security">安全策略</option>
+            </select>
+          </div>
 
-              <div class="mt-2">
-                <div class="overflow-y-auto max-h-[60vh] pr-2 mt-4 custom-scrollbar">
+          <!-- Desktop: tabs -->
+          <div class="hidden sm:flex border-b border-gray-200 mt-4 shrink-0">
+            <button @click="activeTab = 'resource'" class="px-4 py-2 text-sm font-bold border-b-2 transition-all" :class="activeTab === 'resource' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+              接口资源 ({{ resources.length }})
+            </button>
+            <button @click="activeTab = 'data'" class="px-4 py-2 text-sm font-bold border-b-2 transition-all" :class="activeTab === 'data' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+              数据资产 ({{ datasourceList.length }})
+            </button>
+            <button @click="activeTab = 'security'" class="px-4 py-2 text-sm font-bold border-b-2 transition-all" :class="activeTab === 'security' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+              安全策略
+            </button>
+          </div>
+
+          <div v-if="activeTab === 'resource'" class="mt-3 sm:mt-4 shrink-0">
+            <div class="relative rounded-md shadow-sm">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg class="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              </div>
+              <input
+                v-model="searchQuery"
+                type="text"
+                class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 sm:pl-10 text-sm border-gray-300 rounded-lg py-2"
+                placeholder="搜索资源名称、Key 或分组..."
+              />
+            </div>
+          </div>
+
+          <div class="mt-2 flex-1 min-h-0 flex flex-col">
+            <div class="overflow-y-auto flex-1 min-h-0 mt-3 sm:mt-4 pr-1 custom-scrollbar">
                   
                   <!-- Tab: Data Assets -->
                   <div v-if="activeTab === 'data'" class="space-y-4">
                     <div v-if="datasourceList.length === 0" class="py-10 text-center text-gray-400 italic">暂无数据资产访问权限</div>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div v-for="ds in datasourceList" :key="ds" class="bg-orange-50 border border-orange-100 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
                         <div class="flex items-center justify-between mb-2">
                           <span class="text-sm font-bold text-orange-700 uppercase">{{ ds }}</span>
@@ -77,7 +99,7 @@
 
                   <!-- Tab: Security Policy -->
                   <div v-if="activeTab === 'security'" class="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-6">
+                    <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 sm:p-6">
                       <h4 class="text-sm font-bold text-indigo-900 mb-4 flex items-center gap-2">
                         🛡️ 我的数据安全策略
                       </h4>
@@ -124,39 +146,36 @@
                   <!-- Tab: API Resources (Original) -->
                   <div v-if="activeTab === 'resource'" class="space-y-4">
                     <div v-if="filteredResources.length === 0" class="py-10 text-center text-gray-400 italic">未发现匹配的接口资源</div>
-                    <div v-for="resource in filteredResources" :key="resource.resource_key" 
-                         class="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
-                      
+                    <div v-for="resource in filteredResources" :key="resource.resource_key"
+                         class="border border-gray-200 rounded-lg p-3 sm:p-4 hover:shadow-sm transition-shadow">
+
                       <!-- Resource Header -->
-                      <div class="flex justify-between items-start mb-2">
-                        <div>
-                          <div class="flex items-center">
-                            <span v-if="resource.resource_mode === 'SYSTEM'" class="mr-1 text-lg">⚡️</span>
-                            <h4 class="text-md font-bold text-gray-900 mr-2">{{ resource.resource_name }}</h4>
-                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                      <div class="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-2">
+                        <div class="min-w-0">
+                          <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            <span v-if="resource.resource_mode === 'SYSTEM'" class="text-base sm:text-lg">⚡️</span>
+                            <h4 class="text-sm sm:text-base font-bold text-gray-900">{{ resource.resource_name }}</h4>
+                            <span class="px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium bg-gray-100 text-gray-600 shrink-0">
                                {{ resource.resource_group }}
                             </span>
                           </div>
-                            <div class="flex items-center mt-1 text-sm text-gray-500 group cursor-pointer" 
+                          <div class="flex items-center mt-1.5 text-xs sm:text-sm text-gray-500 group cursor-pointer max-w-full"
                                @click="copyText(resource.resource_key, '资源API Key')" title="点击复制 ID">
-                            <code class="bg-gray-50 px-1 py-0.5 rounded text-gray-600 mr-1">{{ resource.resource_key }}</code>
-                             <svg class="h-4 w-4 text-gray-400 group-hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                             </svg>
+                            <code class="bg-gray-50 px-1.5 py-0.5 rounded text-gray-600 truncate max-w-full block">{{ resource.resource_key }}</code>
                           </div>
                         </div>
-                        <div class="text-xs text-gray-400">
+                        <div class="text-[10px] sm:text-xs text-gray-400 shrink-0">
                            更新: {{ formatDate(resource.updated_at) }}
                         </div>
                       </div>
 
                       <!-- Actions -->
-                      <div v-if="resource.resource_mode !== 'SYSTEM'" class="flex space-x-3 mt-4">
-                         <button @click="toggleFields(resource)" class="text-sm text-blue-600 hover:text-blue-800 flex items-center font-bold">
+                      <div v-if="resource.resource_mode !== 'SYSTEM'" class="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-3 sm:mt-4">
+                         <button @click="toggleFields(resource)" class="text-xs sm:text-sm text-blue-600 hover:text-blue-800 flex items-center justify-center sm:justify-start font-bold px-3 py-2 sm:px-0 sm:py-0 rounded-lg sm:rounded-none bg-blue-50 sm:bg-transparent">
                             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                             字段详情
                          </button>
-                         <button @click="showExample(resource)" class="text-sm text-green-600 hover:text-green-800 flex items-center font-bold">
+                         <button @click="showExample(resource)" class="text-xs sm:text-sm text-green-600 hover:text-green-800 flex items-center justify-center sm:justify-start font-bold px-3 py-2 sm:px-0 sm:py-0 rounded-lg sm:rounded-none bg-green-50 sm:bg-transparent">
                             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
                             调用示例
                          </button>
@@ -193,11 +212,9 @@
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
         </div>
-        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-          <button type="button" @click="close" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+        <div class="hidden sm:flex bg-gray-50 px-4 py-3 sm:px-6 sm:flex-row-reverse shrink-0 border-t border-gray-100">
+          <button type="button" @click="close" class="w-full sm:w-auto inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
             关闭
           </button>
         </div>
@@ -206,23 +223,34 @@
 
     <!-- Example Modal (Nested) -->
      <div v-if="exampleResource" class="fixed inset-0 z-[60] overflow-y-auto" role="dialog" aria-modal="true">
-        <div class="flex items-center justify-center min-h-screen px-4">
-           <div class="fixed inset-0 bg-black bg-opacity-50" @click="closeExample"></div>
-           <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl z-10 p-6 relative">
-              <button @click="closeExample" class="absolute top-4 right-4 text-gray-400 hover:text-gray-500">
-                 <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        <div class="flex items-end sm:items-center justify-center min-h-screen p-0 sm:p-4">
+           <div class="fixed inset-0 bg-black/50" @click="closeExample"></div>
+           <div class="relative bg-white rounded-t-2xl sm:rounded-lg shadow-xl w-full sm:max-w-3xl z-10 p-4 sm:p-6 max-h-[92dvh] sm:max-h-none overflow-y-auto">
+              <div class="flex items-start justify-between gap-3 mb-4">
+                <h3 class="text-base sm:text-lg font-medium text-gray-900 pr-8">调用示例: {{ exampleResource.resource_name }}</h3>
+                <button @click="closeExample" class="absolute top-4 right-4 text-gray-400 hover:text-gray-500 p-1">
+                 <svg class="h-5 w-5 sm:h-6 sm:w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
-              <h3 class="text-lg font-medium text-gray-900 mb-4">调用示例: {{ exampleResource.resource_name }}</h3>
-              
-              <!-- Tabs -->
-              <div class="border-b border-gray-200 mb-4">
-                 <nav class="-mb-px flex space-x-8">
-                    <button @click="exampleTab = 'universal'" 
-                            :class="[exampleTab === 'universal' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']">
+              </div>
+
+              <!-- Mobile example tab -->
+              <select
+                v-model="exampleTab"
+                class="sm:hidden w-full mb-4 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium"
+              >
+                <option value="universal">通用查询接口 (Query)</option>
+                <option value="direct">资源接口 (Resource)</option>
+              </select>
+
+              <!-- Desktop example tabs -->
+              <div class="hidden sm:block border-b border-gray-200 mb-4">
+                 <nav class="-mb-px flex space-x-8 overflow-x-auto custom-scrollbar">
+                    <button @click="exampleTab = 'universal'"
+                            :class="[exampleTab === 'universal' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm shrink-0']">
                        通用查询接口 (Query)
                     </button>
                     <button @click="exampleTab = 'direct'"
-                            :class="[exampleTab === 'direct' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']">
+                            :class="[exampleTab === 'direct' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm shrink-0']">
                        资源接口 (Resource)
                     </button>
                  </nav>
