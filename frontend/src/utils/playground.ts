@@ -24,9 +24,13 @@ export function buildPlaygroundRoute(resource: {
   resource_key: string
   resource_group?: string | null
 }): RouteLocationRaw {
+  const group = resource.resource_group?.trim() || undefined
   return {
     path: '/dashboard/playground',
-    query: { resource: resource.resource_key },
-    hash: buildPlaygroundOperationHash(resource.resource_key, resource.resource_group),
+    query: {
+      resource: resource.resource_key,
+      ...(group ? { group } : {}),
+    },
+    hash: buildPlaygroundOperationHash(resource.resource_key, group),
   }
 }

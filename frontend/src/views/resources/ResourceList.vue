@@ -24,6 +24,7 @@ const loading = ref(false)
 const searchQuery = ref('')
 const searchGroupQuery = ref('')
 const statusFilter = ref<'ALL' | '1' | '0'>('ALL')
+const catalogFilter = ref<'ALL' | '1' | '0' | '2' | 'NONE'>('ALL')
 const activeTab = ref('ALL')
 const onlyAuthorized = ref(false)
 const importFile = ref<HTMLInputElement | null>(null)
@@ -37,6 +38,22 @@ const pageSize = ref(20)
 
 const selectedKeys = ref<Set<string>>(new Set())
 const datasourcesMap = ref<Record<string, string>>({})
+const catalogStatusMap = ref<Record<string, number>>({})
+const showBatchPublishModal = ref(false)
+const batchPublishResult = ref<{ published: number; skipped: { product_key: string; display_name: string; reason: string }[]; total: number } | null>(null)
+const showUnpublishModal = ref(false)
+const unpublishTarget = ref<Resource | null>(null)
+const unpublishPreview = ref({ count: 0, holders: [] as { user_id: number; user_name: string }[] })
+const unpublishRevoke = ref(false)
+const unpublishing = ref(false)
+const showAssignOwnerModal = ref(false)
+const assignOwnerUserId = ref<number | null>(null)
+const assignOwnerOnlyEmpty = ref(true)
+const assignOwnerUsers = ref<{ id: number; user_name: string; remark?: string }[]>([])
+const productsWithoutOwner = ref(0)
+const assigningOwner = ref(false)
+
+const canManageCatalog = computed(() => isAdmin.value || hasPerm('element:catalog:manage'))
 
 const extensions = [sql(), oneDark]
 
@@ -119,7 +136,16 @@ const filteredResources = computed(() => {
       const userRes = (userInfo.value?.permissions as { resources?: string[] })?.resources || []
       matchesAuth = userRes.includes(r.resource_key)
     }
-    return matchesSearch && matchesStatus && matchesGroup && matchesAuth
+
+    const catalogStatus = catalogStatusMap.value[r.resource_key]
+    let matchesCatalog = true
+    if (catalogFilter.value === 'NONE') {
+      matchesCatalog = catalogStatus === undefined
+    } else if (catalogFilter.value !== 'ALL') {
+      matchesCatalog = catalogStatus === Number(catalogFilter.value)
+    }
+
+    return matchesSearch && matchesStatus && matchesGroup && matchesAuth && matchesCatalog
   })
 })
 
@@ -174,7 +200,11 @@ const emptyStateVariant = computed((): 'no-resources' | 'no-results' | 'no-permi
 })
 
 const hasActiveFilters = computed(
-  () => !!searchQuery.value || statusFilter.value !== 'ALL' || (onlyAuthorized.value && !isAdmin.value)
+  () =>
+    !!searchQuery.value ||
+    statusFilter.value !== 'ALL' ||
+    catalogFilter.value !== 'ALL' ||
+    (onlyAuthorized.value && !isAdmin.value)
 )
 
 const tableColSpan = computed(() => {
@@ -200,6 +230,7 @@ const sortIndicator = (field: ResourceSortField) => {
 const clearFilters = () => {
   searchQuery.value = ''
   statusFilter.value = 'ALL'
+  catalogFilter.value = 'ALL'
   onlyAuthorized.value = !isAdmin.value
   activeTab.value = 'ALL'
   page.value = 1
@@ -368,6 +399,134 @@ const formatDate = (dateStr?: string) => {
   })
 }
 
+const fetchCatalogStatus = async () => {
+  try {
+    const res = await axios.get('/api/portal/catalog/status-map')
+    catalogStatusMap.value = res.data
+  } catch {
+    catalogStatusMap.value = {}
+  }
+}
+
+const publishToCatalog = async (res: Resource, publish = true) => {
+  try {
+    await axios.post('/api/portal/catalog/products/publish-from-resource', {
+      resource_key: res.resource_key,
+      publish,
+    })
+    showToast(publish ? '已发布到数据产品目录' : '已保存目录草稿', 'success')
+    await fetchCatalogStatus()
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    showToast(err.response?.data?.detail || '发布失败', 'error')
+  }
+}
+
+const unpublishFromCatalog = async (res: Resource) => {
+  try {
+    const preview = await axios.get(
+      `/api/portal/catalog/products/${encodeURIComponent(res.resource_key)}/unpublish-preview`,
+    )
+    unpublishTarget.value = res
+    unpublishPreview.value = preview.data
+    unpublishRevoke.value = false
+    showUnpublishModal.value = true
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    showToast(err.response?.data?.detail || '无法获取下架预览', 'error')
+  }
+}
+
+const confirmUnpublishFromCatalog = async () => {
+  const res = unpublishTarget.value
+  if (!res) return
+  unpublishing.value = true
+  try {
+    await axios.post(`/api/portal/catalog/products/${encodeURIComponent(res.resource_key)}/unpublish`, {
+      revoke_permissions: unpublishRevoke.value,
+    })
+    showToast('已从数据产品目录下架', 'success')
+    showUnpublishModal.value = false
+    unpublishTarget.value = null
+    await fetchCatalogStatus()
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    showToast(err.response?.data?.detail || '下架失败', 'error')
+  } finally {
+    unpublishing.value = false
+  }
+}
+
+const batchPublishCatalog = async () => {
+  try {
+    const res = await axios.post('/api/portal/catalog/products/batch-publish')
+    batchPublishResult.value = res.data
+    if (res.data.skipped?.length) {
+      showBatchPublishModal.value = true
+    } else {
+      showToast(`已批量发布 ${res.data.published} 个产品`, 'success')
+    }
+    await fetchCatalogStatus()
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    showToast(err.response?.data?.detail || '批量发布失败', 'error')
+  }
+}
+
+const fetchWithoutOwnerCount = async () => {
+  if (!canManageCatalog.value) return
+  try {
+    const res = await axios.get('/api/portal/catalog/products/without-owner-count')
+    productsWithoutOwner.value = res.data.count ?? 0
+  } catch {
+    productsWithoutOwner.value = 0
+  }
+}
+
+const openAssignOwnerModal = async () => {
+  assignOwnerUserId.value = null
+  assignOwnerOnlyEmpty.value = true
+  try {
+    const res = await axios.get('/api/portal/catalog/assign-owner-users')
+    assignOwnerUsers.value = res.data
+    showAssignOwnerModal.value = true
+  } catch {
+    showToast('加载用户列表失败', 'error')
+  }
+}
+
+const submitAssignOwner = async () => {
+  if (!assignOwnerUserId.value) {
+    showToast('请选择负责人', 'warning')
+    return
+  }
+  const selectedCatalogKeys = Array.from(selectedKeys.value).filter((k) => catalogStatusMap.value[k] !== undefined)
+  assigningOwner.value = true
+  try {
+    const res = await axios.post('/api/portal/catalog/products/batch-assign-owner', {
+      owner_user_id: assignOwnerUserId.value,
+      product_keys: selectedCatalogKeys.length ? selectedCatalogKeys : undefined,
+      only_without_owner: assignOwnerOnlyEmpty.value,
+    })
+    showToast(`已指定 ${res.data.updated} 个产品负责人`, 'success')
+    showAssignOwnerModal.value = false
+    await fetchWithoutOwnerCount()
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    showToast(err.response?.data?.detail || '指定负责人失败', 'error')
+  } finally {
+    assigningOwner.value = false
+  }
+}
+
+const catalogStatusLabel = (key: string) => {
+  const s = catalogStatusMap.value[key]
+  if (s === 1) return '已上架'
+  if (s === 0) return '草稿'
+  if (s === 2) return '已下线'
+  return null
+}
+
 const fetchDatasources = async () => {
   try {
     const response = await axios.get('/api/portal/datasource/datasources?status=active')
@@ -532,6 +691,8 @@ onMounted(() => {
   if (!isAdmin.value) onlyAuthorized.value = true
   fetchResources()
   fetchDatasources()
+  fetchCatalogStatus()
+  fetchWithoutOwnerCount()
 })
 </script>
 
@@ -565,6 +726,26 @@ onMounted(() => {
                 导入
               </button>
             </template>
+            <button
+              v-if="isAdmin"
+              class="text-indigo-600 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-50 text-sm"
+              @click="batchPublishCatalog"
+            >
+              批量发布目录
+            </button>
+            <button
+              v-if="canManageCatalog"
+              class="text-indigo-600 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-50 text-sm relative"
+              @click="openAssignOwnerModal"
+            >
+              批量指定负责人
+              <span
+                v-if="productsWithoutOwner > 0"
+                class="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] leading-4 text-center"
+              >
+                {{ productsWithoutOwner > 99 ? '99+' : productsWithoutOwner }}
+              </span>
+            </button>
             <router-link
               v-if="hasPerm('element:resource:create')"
               to="/dashboard/resources/create"
@@ -611,6 +792,13 @@ onMounted(() => {
               <option value="ALL">全部状态</option>
               <option value="1">已启用</option>
               <option value="0">已禁用</option>
+            </select>
+            <select v-model="catalogFilter" class="border border-gray-300 rounded-lg px-3 py-2 text-sm" @change="page = 1">
+              <option value="ALL">目录：全部</option>
+              <option value="1">目录：已上架</option>
+              <option value="0">目录：草稿</option>
+              <option value="2">目录：已下线</option>
+              <option value="NONE">目录：未入目录</option>
             </select>
             <label v-if="!isAdmin" class="flex items-center gap-2 text-sm text-gray-600">
               <input v-model="onlyAuthorized" type="checkbox" class="rounded text-blue-600" @change="page = 1" />
@@ -694,6 +882,7 @@ onMounted(() => {
                       <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <span class="text-sm font-semibold text-gray-900 truncate" :title="res.resource_name">{{ res.resource_name }}</span>
+                          <span v-if="catalogStatusLabel(res.resource_key)" class="shrink-0 text-[10px] px-1 py-0.5 rounded font-bold" :class="catalogStatusMap[res.resource_key] === 1 ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'">{{ catalogStatusLabel(res.resource_key) }}</span>
                           <span v-if="res.resource_key === 'system.sql.execute'" class="shrink-0 text-[10px] px-1 py-0.5 bg-red-100 text-red-700 rounded font-bold">高危</span>
                         </div>
                         <p class="text-[11px] text-gray-400 font-mono truncate" :title="res.resource_key">{{ res.resource_key }}</p>
@@ -754,6 +943,8 @@ onMounted(() => {
                       :can-delete="hasPerm('element:resource:delete')"
                       :can-export="hasPerm('element:resource:export')"
                       :can-manage-special="hasPerm('element:resource:manage_special')"
+                      :catalog-status="catalogStatusMap[res.resource_key] ?? null"
+                      :can-unpublish-catalog="isAdmin"
                       @logs="openLogDrawer(res.resource_key)"
                       @export="exportResource(res)"
                       @delete="confirmDeleteResource(res.resource_key)"
@@ -761,6 +952,8 @@ onMounted(() => {
                       @open-ttl="openTtlModal(res)"
                       @open-sql-test="openSqlTestModal"
                       @copy-api="copyApiUrl(res.resource_key, $event)"
+                      @publish-catalog="publishToCatalog(res)"
+                      @unpublish-catalog="unpublishFromCatalog(res)"
                     />
                   </td>
                 </tr>
@@ -857,6 +1050,103 @@ onMounted(() => {
             <button class="px-4 py-2 text-sm border rounded-lg" @click="showTtlModal = false">取消</button>
             <button class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg" :disabled="loadingTtl" @click="saveTtl">保存</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Batch assign owner -->
+      <div v-if="showAssignOwnerModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="showAssignOwnerModal = false" />
+        <div class="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+          <h3 class="text-lg font-semibold text-gray-900">批量指定产品负责人</h3>
+          <p class="text-sm text-gray-500 mt-2">
+            {{ selectedKeys.size ? `已选 ${selectedKeys.size} 个资源中在目录内的产品` : `将对全部未指定负责人的目录产品生效（当前 ${productsWithoutOwner} 个）` }}
+          </p>
+          <div class="mt-4 space-y-3">
+            <select v-model="assignOwnerUserId" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <option :value="null">选择负责人</option>
+              <option v-for="u in assignOwnerUsers" :key="u.id" :value="u.id">
+                {{ u.user_name }}{{ u.remark ? ` (${u.remark})` : '' }}
+              </option>
+            </select>
+            <label class="flex items-center gap-2 text-sm text-gray-600">
+              <input v-model="assignOwnerOnlyEmpty" type="checkbox" class="rounded text-indigo-600" />
+              仅更新尚未指定负责人的产品
+            </label>
+          </div>
+          <div class="mt-5 flex gap-2 justify-end">
+            <button class="px-4 py-2 text-sm border rounded-lg" @click="showAssignOwnerModal = false">取消</button>
+            <button
+              :disabled="assigningOwner"
+              class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg disabled:opacity-50"
+              @click="submitAssignOwner"
+            >
+              {{ assigningOwner ? '保存中...' : '确认' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Catalog unpublish -->
+      <div v-if="showUnpublishModal && unpublishTarget" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="showUnpublishModal = false" />
+        <div class="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+          <h3 class="text-lg font-bold text-gray-900">确认下架</h3>
+          <p class="text-sm text-gray-600">
+            确认将「{{ unpublishTarget.resource_name }}」从数据产品目录下架？
+          </p>
+          <p v-if="unpublishPreview.count > 0" class="text-sm text-amber-700 bg-amber-50 rounded-lg p-3">
+            仍有 <strong>{{ unpublishPreview.count }}</strong> 个用户持有该产品的 API 访问权限。
+          </p>
+          <label v-if="unpublishPreview.count > 0" class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input v-model="unpublishRevoke" type="checkbox" class="rounded border-gray-300" />
+            同时收回全部用户权限
+          </label>
+          <div class="flex justify-end gap-2 pt-2">
+            <button class="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50" @click="showUnpublishModal = false">
+              取消
+            </button>
+            <button
+              :disabled="unpublishing"
+              class="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+              @click="confirmUnpublishFromCatalog"
+            >
+              {{ unpublishing ? '下架中...' : '确认下架' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch publish result -->
+      <div v-if="showBatchPublishModal && batchPublishResult" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="showBatchPublishModal = false" />
+        <div class="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto">
+          <h3 class="text-lg font-semibold text-gray-900">批量发布结果</h3>
+          <p class="text-sm text-gray-500 mt-2">
+            成功 <strong class="text-green-600">{{ batchPublishResult.published }}</strong> /
+            共 {{ batchPublishResult.total }} 个草稿
+          </p>
+          <div v-if="batchPublishResult.skipped?.length" class="mt-4 space-y-2">
+            <p class="text-sm font-medium text-amber-700">以下产品需补全信息后再发布：</p>
+            <div
+              v-for="s in batchPublishResult.skipped"
+              :key="s.product_key"
+              class="flex items-start justify-between gap-3 p-3 bg-amber-50 rounded-lg text-sm"
+            >
+              <div class="min-w-0">
+                <p class="font-medium text-gray-800 truncate">{{ s.display_name }}</p>
+                <p class="text-xs text-amber-700 mt-0.5">{{ s.reason }}</p>
+              </div>
+              <button
+                class="flex-shrink-0 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                @click="router.push(`/dashboard/catalog/${s.product_key}/edit`); showBatchPublishModal = false"
+              >
+                去编辑
+              </button>
+            </div>
+          </div>
+          <button class="mt-5 w-full py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200" @click="showBatchPublishModal = false">
+            关闭
+          </button>
         </div>
       </div>
 

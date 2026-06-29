@@ -17,6 +17,8 @@ const props = defineProps<{
   canDelete: boolean
   canExport: boolean
   canManageSpecial: boolean
+  catalogStatus?: number | null
+  canUnpublishCatalog?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,6 +29,8 @@ const emit = defineEmits<{
   openTtl: []
   openSqlTest: []
   copyApi: [type: 'resource' | 'query']
+  publishCatalog: []
+  unpublishCatalog: []
 }>()
 
 const MENU_WIDTH = 176
@@ -161,6 +165,20 @@ const showMoreMenu = computed(() => !actionKind.value || actionKind.value === 's
           </button>
           <button class="w-full text-left px-3 py-2 hover:bg-gray-50" @click="emit('copyApi', 'query'); menuOpen = false">
             复制通用 Query URL
+          </button>
+          <button
+            v-if="canEdit && resource.resource_group?.toLowerCase() !== 'system'"
+            class="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700"
+            @click="emit('publishCatalog'); menuOpen = false"
+          >
+            {{ catalogStatus === 1 ? '更新目录信息' : catalogStatus === 0 ? '发布到目录' : '重新发布到目录' }}
+          </button>
+          <button
+            v-if="canUnpublishCatalog && catalogStatus === 1"
+            class="w-full text-left px-3 py-2 hover:bg-amber-50 text-amber-700"
+            @click="emit('unpublishCatalog'); menuOpen = false"
+          >
+            从目录下架
           </button>
           <button
             v-if="canExport"
