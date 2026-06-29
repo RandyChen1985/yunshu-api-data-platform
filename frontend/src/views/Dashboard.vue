@@ -448,7 +448,7 @@ const filteredMenuGroups = computed(() => {
          class="h-16 flex items-center bg-sidebar border-b border-gray-700 overflow-hidden whitespace-nowrap"
          :class="isCollapsed ? 'justify-center px-0' : 'px-4'"
       >
-        <img src="/favicon.png?v=20260629" class="w-8 h-8 flex-shrink-0 rounded-lg" alt="Logo" />
+        <img src="/favicon.png?v=20260629-2" class="w-8 h-8 flex-shrink-0 rounded-lg" alt="Logo" />
         <transition name="fade">
           <div v-if="!isCollapsed" class="ml-2.5 flex flex-col justify-center -translate-y-0.5">
             <span class="text-[15px] font-bold tracking-wide leading-tight">云枢 · 数据服务平台</span>
@@ -1050,29 +1050,6 @@ const filteredMenuGroups = computed(() => {
 .dialog-leave-to > div {
   transform: scale(0.9);
   opacity: 0;
-}
-
-/* Optional: Custom scrollbar styling for Webkit */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 0px; /* 默认宽度为 0，完全隐藏 */
-  height: 0px;
-}
-.custom-scrollbar:hover::-webkit-scrollbar {
-  width: 6px; /* 悬停时恢复宽度 */
-  height: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 3px;
-}
-.custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.5); /* gray-400 */
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(107, 114, 128, 0.8); /* gray-500 */
 }
 
 /* Custom Tooltip Styles */

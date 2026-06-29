@@ -236,7 +236,7 @@ const handleLogin = async () => {
           <div class="flex justify-center mb-4">
              <!-- Logo or Icon Animation -->
              <img
-               src="/favicon.png?v=20260629"
+               src="/favicon.png?v=20260629-2"
                alt="云枢数据服务平台"
                class="w-20 h-20 rounded-2xl shadow-lg object-cover"
              />
