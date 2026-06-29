@@ -174,22 +174,26 @@ router.beforeEach(async (to: any, _from: any, next: any) => {
           return
       }
 
-      if (!userMenus.includes(targetMenu)) {
-        // 目录权限申请：产品负责人 / 审批元素权限可进入，不要求 menu:catalog:requests
-        if (targetMenu === 'menu:catalog:requests') {
-          const userElements = userInfo.permissions?.elements || []
-          const canBySession = sessionStorage.getItem('catalog_can_access_requests') === '1'
-          const ownedProducts = Number(sessionStorage.getItem('catalog_owned_products') || 0)
-          if (
-            userElements.includes('element:catalog:review') ||
-            canBySession ||
-            ownedProducts > 0
-          ) {
-            next()
-            return
-          }
+      // 目录权限申请：以服务端 pending-count 为准，避免 localStorage 残留 menu 权限
+      if (targetMenu === 'menu:catalog:requests') {
+        const userElements = userInfo.permissions?.elements || []
+        const canBySession = sessionStorage.getItem('catalog_can_access_requests') === '1'
+        const ownedProducts = Number(sessionStorage.getItem('catalog_owned_products') || 0)
+        if (
+          userElements.includes('element:catalog:review') ||
+          canBySession ||
+          ownedProducts > 0
+        ) {
+          next()
+          return
         }
+        if (to.name !== 'Forbidden') {
+          next({ name: 'Forbidden' })
+          return
+        }
+      }
 
+      if (!userMenus.includes(targetMenu)) {
         // Optimization: If accessing Overview (default page) but denied,
         // try to redirect to the first accessible page instead of Forbidden.
         if (to.name === 'Overview' && userRole !== 'admin') {

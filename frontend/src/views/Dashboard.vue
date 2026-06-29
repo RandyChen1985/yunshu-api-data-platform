@@ -422,7 +422,7 @@ const filteredMenuGroups = computed(() => {
     items: group.items
       .filter(item => {
         if (item.to === '/dashboard/catalog-requests') {
-          return hasMenuPerm(item.perm) || catalogBadge.value.can_access_requests
+          return catalogBadge.value.can_access_requests
         }
         return hasMenuPerm(item.perm)
       })

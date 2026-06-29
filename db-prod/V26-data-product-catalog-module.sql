@@ -107,9 +107,7 @@ INSERT IGNORE INTO `sys_ui_permissions` (`role_id`, `perm_type`, `perm_code`, `e
 SELECT r.id, 'menu', 'menu:asset-panorama', 1
 FROM `sys_roles` r;
 
-INSERT IGNORE INTO `sys_ui_permissions` (`role_id`, `perm_type`, `perm_code`, `enabled`)
-SELECT r.id, 'menu', 'menu:catalog:requests', 1
-FROM `sys_roles` r;
+-- menu:catalog:requests 不在此批量授予，需在角色管理中单独分配 element:catalog:review 或本菜单权限
 
 -- =============================================================================
 -- 5. 目录默认负责人策略（原 V29）

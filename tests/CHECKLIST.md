@@ -65,6 +65,7 @@
 | `/api/portal/catalog/products?only_no_access` | `test_catalog.py` | 无权限产品筛选 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products/batch-assign-owner` | `test_catalog.py` | 批量指定负责人 | ⏳ 待验 | 2026-06-29 |
 | `db-prod/V26-data-product-catalog-module.sql` | 手动 | 数据产品目录全模块 DDL（含权限申请、collation、配置种子） | ⏳ 待验 | 2026-06-29 |
+| `db-prod/V27-revoke-catalog-requests-menu-default-grant.sql` | 手动 | 撤销 menu:catalog:requests 全员默认授予 | ⏳ 待验 | 2026-06-29 |
 
 | `/api/portal/system/logs` | `test_system_logs.py`    | 系统配置日志、维护日志查询              | ✅ 通过 | 2026-01-27   |
 

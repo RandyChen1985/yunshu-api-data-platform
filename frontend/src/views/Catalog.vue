@@ -75,6 +75,10 @@ const canExport = computed(() => {
 
 const showMineTab = computed(() => mineSummary.value.owned_products > 0 || isAdmin.value)
 
+const canAccessRequests = computed(
+  () => sessionStorage.getItem('catalog_can_access_requests') === '1',
+)
+
 const fetchData = async () => {
   loading.value = true
   try {
@@ -238,7 +242,7 @@ onMounted(fetchData)
         </span>
       </button>
       <router-link
-        v-if="mineSummary.pending_review > 0"
+        v-if="canAccessRequests && mineSummary.pending_review > 0"
         to="/dashboard/catalog-requests"
         class="ml-auto text-sm text-amber-600 hover:text-amber-800 self-center"
       >
