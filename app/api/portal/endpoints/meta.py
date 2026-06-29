@@ -94,6 +94,7 @@ async def list_tables(
     try:
         # 1. Fetch all tables from data source
         all_tables = await MetaService.get_tables(data_source)
+        all_tables = await MetaService.enrich_tables_with_metadata(data_source, all_tables)
         
         # 2. Admin Bypass
         if user.get("role") == "admin":
@@ -140,6 +141,9 @@ async def list_columns(
             table_name=request.table_name,
             custom_sql=request.custom_sql,
             params=request.params
+        )
+        columns = await MetaService.enrich_columns_with_metadata(
+            request.data_source, request.table_name, columns
         )
         return {"columns": columns}
     except Exception as e:

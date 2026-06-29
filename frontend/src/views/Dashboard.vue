@@ -331,13 +331,6 @@ const menuGroups: MenuGroup[] = [
     ]
   },
   {
-    title: '调试中心',
-    items: [
-      { name: 'API 调试', to: '/dashboard/playground', icon: 'playground', perm: 'menu:playground', activeNames: ['Playground'] },
-      { name: '开发者中心', to: '/dashboard/developer', icon: 'developer', perm: '', activeNames: ['DeveloperPortal'] }
-    ]
-  },
-  {
     title: '数据开发',
     items: [
       { name: '接口管理', to: '/dashboard/resources', icon: 'resources', perm: 'menu:resources' },
@@ -345,6 +338,13 @@ const menuGroups: MenuGroup[] = [
       { name: '元数据中心', to: '/dashboard/metadata', icon: 'metadata', perm: 'menu:metadata' },
       { name: '数据源管理', to: '/dashboard/datasources', icon: 'datasource', perm: 'menu:datasource', activeNames: ['DataSourceList', 'DataSourceEdit', 'DataSourceNew'] },
       { name: '审计日志', to: '/dashboard/audit', icon: 'audit', perm: 'menu:audit', activeNames: ['Audit'] }
+    ]
+  },
+  {
+    title: '调试中心',
+    items: [
+      { name: 'API 调试', to: '/dashboard/playground', icon: 'playground', perm: 'menu:playground', activeNames: ['Playground'] },
+      { name: '开发者中心', to: '/dashboard/developer', icon: 'developer', perm: '', activeNames: ['DeveloperPortal'] }
     ]
   },
   {
