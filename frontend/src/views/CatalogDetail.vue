@@ -239,7 +239,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6 max-w-7xl mx-auto">
+  <div class="space-y-6">
     <button class="text-sm text-gray-500 hover:text-indigo-600 flex items-center gap-1" @click="router.push('/dashboard/catalog')">
       ← 返回目录
     </button>
