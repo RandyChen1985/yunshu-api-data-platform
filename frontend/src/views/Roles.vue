@@ -383,6 +383,11 @@ const { showToast } = useToast()
 // --- Constants ---
 const MENU_TREE = [
     { id: 'menu:overview', label: '系统概览', children: [] },
+    { id: 'menu:asset-panorama', label: '数据资产全景', children: [] },
+    { id: 'menu:catalog:requests', label: '目录权限申请', children: [
+        { id: 'element:catalog:review', label: '审批目录访问申请' },
+        { id: 'element:catalog:manage', label: '编辑数据产品信息' }
+    ] },
     { id: 'menu:lab', label: 'SQL 实验室', children: [
         { id: 'element:lab:generate', label: 'AI 生成/修改 SQL' }, 
         { id: 'element:lab:publish', label: '发布为 API' },
@@ -391,7 +396,7 @@ const MENU_TREE = [
         { id: 'element:lab:mode_api', label: '模式：API 调试' },
         { id: 'element:lab:mode_analyst', label: '模式：自助取数' }
     ] },
-    { id: 'menu:resources', label: '接口管理', children: [{ id: 'element:resource:create', label: '新建接口' }, { id: 'element:resource:edit', label: '编辑接口' }, { id: 'element:resource:delete', label: '删除接口' }, { id: 'element:resource:import', label: '导入配置' }, { id: 'element:resource:export', label: '导出配置' }, { id: 'element:resource:manage_special', label: '管理特殊资源(TTL/SQL测试)' }] },
+    { id: 'menu:resources', label: '接口管理', children: [{ id: 'element:resource:create', label: '新建接口' }, { id: 'element:resource:edit', label: '编辑接口' }, { id: 'element:resource:delete', label: '删除接口' }, { id: 'element:resource:import', label: '导入配置' }, { id: 'element:resource:export', label: '导出配置' }, { id: 'element:resource:manage_special', label: '管理特殊资源(TTL/SQL测试)' }, { id: 'element:catalog:publish', label: '发布到产品目录' }] },
     
     { id: 'menu:metadata', label: '元数据管理', children: [
         { id: 'element:metadata:view', label: '查看：元数据详情' },

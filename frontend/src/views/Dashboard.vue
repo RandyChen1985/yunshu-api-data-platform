@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch, provide } from 'vue'
 import axios from '../utils/axios'
 import Toast from '../components/Toast.vue'
 import MyPermissionsModal from '../components/MyPermissionsModal.vue'
@@ -21,6 +21,22 @@ const showPermissionsModal = ref(false)
 const myResources = ref<any[]>([])
 const loadingMyResources = ref(false)
 const userPermissions = ref<any>({})
+const catalogBadge = ref({ count: 0, show_requests_menu: false, can_access_requests: false, owned_products: 0 })
+
+const fetchCatalogBadge = async () => {
+  try {
+    const res = await axios.get('/api/portal/catalog/access-requests/pending-count')
+    catalogBadge.value = res.data
+    sessionStorage.setItem('catalog_can_access_requests', res.data.can_access_requests ? '1' : '0')
+    sessionStorage.setItem('catalog_owned_products', String(res.data.owned_products || 0))
+  } catch {
+    catalogBadge.value = { count: 0, show_requests_menu: false, can_access_requests: false, owned_products: 0 }
+    sessionStorage.setItem('catalog_can_access_requests', '0')
+    sessionStorage.setItem('catalog_owned_products', '0')
+  }
+}
+
+provide('refreshCatalogBadge', fetchCatalogBadge)
 
 // Change Password State
 const loadingPassword = ref(false)
@@ -184,6 +200,11 @@ onMounted(() => {
     fetchUserInfo()
     fetchOnlineUsers()
     fetchMyResources()
+    fetchCatalogBadge()
+})
+
+watch(() => route.path, () => {
+  fetchCatalogBadge()
 })
 
 const openOnlineUsers = () => {
@@ -315,6 +336,7 @@ interface MenuItem {
   icon: string;
   perm: string;
   activeNames?: string[];
+  badge?: number;
 }
 
 interface MenuGroup {
@@ -328,6 +350,14 @@ const menuGroups: MenuGroup[] = [
     title: '',
     items: [
       { name: '概览', to: '/dashboard', icon: 'dashboard', perm: 'menu:overview', activeNames: ['Overview'] }
+    ]
+  },
+  {
+    title: '数据服务',
+    items: [
+      { name: '产品目录', to: '/dashboard/catalog', icon: 'catalog', perm: '', activeNames: ['Catalog', 'CatalogDetail', 'CatalogProductEdit'] },
+      { name: '资产全景', to: '/dashboard/asset-panorama', icon: 'panorama', perm: 'menu:asset-panorama', activeNames: ['AssetPanorama'] },
+      { name: '权限申请', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', activeNames: ['CatalogAccessRequests'] }
     ]
   },
   {
@@ -363,6 +393,9 @@ const isItemActive = (item: MenuItem) => {
   // 特殊处理元数据中心这种前缀匹配的
   if (item.to === '/dashboard/metadata' && route.path.startsWith('/dashboard/metadata')) return true;
   if (item.to === '/dashboard/resources' && route.path.startsWith('/dashboard/resources')) return true;
+  if (item.to === '/dashboard/catalog') {
+    return route.path === '/dashboard/catalog' || route.path.startsWith('/dashboard/catalog/')
+  }
   return false;
 };
 
@@ -386,7 +419,17 @@ const toggleMenuGroup = (group: MenuGroup) => {
 const filteredMenuGroups = computed(() => {
   return menuGroups.map(group => ({
     ...group,
-    items: group.items.filter(item => hasMenuPerm(item.perm))
+    items: group.items
+      .filter(item => {
+        if (item.to === '/dashboard/catalog-requests') {
+          return hasMenuPerm(item.perm) || catalogBadge.value.can_access_requests
+        }
+        return hasMenuPerm(item.perm)
+      })
+      .map(item => ({
+        ...item,
+        badge: item.to === '/dashboard/catalog-requests' ? catalogBadge.value.count : undefined,
+      }))
   })).filter(group => group.items.length > 0);
 });
 
@@ -405,7 +448,7 @@ const filteredMenuGroups = computed(() => {
          class="h-16 flex items-center bg-sidebar border-b border-gray-700 overflow-hidden whitespace-nowrap"
          :class="isCollapsed ? 'justify-center px-0' : 'px-4'"
       >
-        <img src="/favicon.svg" class="w-8 h-8 flex-shrink-0 rounded-lg" alt="Logo" />
+        <img src="/favicon.png?v=20260629-2" class="w-8 h-8 flex-shrink-0 rounded-lg" alt="Logo" />
         <transition name="fade">
           <div v-if="!isCollapsed" class="ml-2.5 flex flex-col justify-center -translate-y-0.5">
             <span class="text-[15px] font-bold tracking-wide leading-tight">云枢 · 数据服务平台</span>
@@ -477,10 +520,20 @@ const filteredMenuGroups = computed(() => {
             <svg v-else-if="item.icon === 'metadata' || item.icon === 'datasource'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
             <svg v-else-if="item.icon === 'users'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
             <svg v-else-if="item.icon === 'roles'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+            <svg v-else-if="item.icon === 'catalog'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+            <svg v-else-if="item.icon === 'panorama'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
             <svg v-else-if="item.icon === 'config'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
 
                 <transition name="fade">
-                  <span v-if="!isCollapsed" class="ml-3">{{ item.name }}</span>
+                  <span v-if="!isCollapsed" class="ml-3 flex-1 flex items-center justify-between gap-2 min-w-0">
+                    <span class="truncate">{{ item.name }}</span>
+                    <span
+                      v-if="item.badge && item.badge > 0"
+                      class="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center"
+                    >
+                      {{ item.badge > 99 ? '99+' : item.badge }}
+                    </span>
+                  </span>
                 </transition>
               </router-link>
             </div>
@@ -602,6 +655,15 @@ const filteredMenuGroups = computed(() => {
 
       <!-- Main Scrollable Content -->
       <main class="flex-1 overflow-y-auto bg-gray-100 p-8 custom-scrollbar">
+        <div
+          v-if="catalogBadge.count > 0 && catalogBadge.can_access_requests"
+          class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <span>您有 <strong>{{ catalogBadge.count }}</strong> 条目录权限申请待审批</span>
+          <router-link to="/dashboard/catalog-requests" class="font-medium text-amber-800 hover:text-amber-950 whitespace-nowrap">
+            立即处理 →
+          </router-link>
+        </div>
         <router-view v-slot="{ Component }">
            <transition name="page" mode="out-in">
               <component :is="Component" :key="$route.fullPath" />
@@ -988,29 +1050,6 @@ const filteredMenuGroups = computed(() => {
 .dialog-leave-to > div {
   transform: scale(0.9);
   opacity: 0;
-}
-
-/* Optional: Custom scrollbar styling for Webkit */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 0px; /* 默认宽度为 0，完全隐藏 */
-  height: 0px;
-}
-.custom-scrollbar:hover::-webkit-scrollbar {
-  width: 6px; /* 悬停时恢复宽度 */
-  height: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 3px;
-}
-.custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.5); /* gray-400 */
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(107, 114, 128, 0.8); /* gray-500 */
 }
 
 /* Custom Tooltip Styles */

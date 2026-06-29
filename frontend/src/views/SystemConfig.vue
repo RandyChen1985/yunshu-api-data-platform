@@ -38,7 +38,7 @@ import {
   CircleStackIcon,
   ShieldCheckIcon
 } from '@heroicons/vue/24/outline'
-const activeTab = ref<'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking'>('monitor')
+const activeTab = ref<'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'catalog'>('monitor')
 const logSubTab = ref<'tasks' | 'shards'>('tasks')
 const logs = ref<string[]>([])
 const maintenanceLogs = ref<any[]>([])
@@ -61,7 +61,9 @@ const loading = ref<{ [key: string]: boolean }> ({
   rl_save: false,
   rl_peak: false,
   masking_load: false,
-  masking_save: false
+  masking_save: false,
+  catalog_load: false,
+  catalog_save: false
 })
 
 // Data Masking State
@@ -76,6 +78,70 @@ interface MaskingRule {
 
 const maskingRules = ref<MaskingRule[]>([])
 const maskingGlobalEnabled = ref(true)
+
+interface GroupOwnerRow {
+  group: string
+  user_id: number | null
+}
+
+const catalogConfig = ref({
+  default_owner_strategy: 'publisher' as 'publisher' | 'group_owner' | 'none',
+  group_owner_rows: [] as GroupOwnerRow[],
+})
+const catalogUsers = ref<{ id: number; user_name: string; remark?: string }[]>([])
+
+const fetchCatalogConfig = async () => {
+  loading.value.catalog_load = true
+  try {
+    const [settingsRes, usersRes] = await Promise.all([
+      axios.get('/api/portal/catalog/settings'),
+      axios.get('/api/portal/catalog/assign-owner-users'),
+    ])
+    catalogConfig.value.default_owner_strategy = settingsRes.data.default_owner_strategy || 'publisher'
+    const map = settingsRes.data.group_owner_map || {}
+    catalogConfig.value.group_owner_rows = Object.entries(map).map(([group, user_id]) => ({
+      group,
+      user_id: Number(user_id),
+    }))
+    catalogUsers.value = usersRes.data
+  } catch {
+    showToast('目录配置加载失败', 'error')
+  } finally {
+    loading.value.catalog_load = false
+  }
+}
+
+const addGroupOwnerRow = () => {
+  catalogConfig.value.group_owner_rows.push({ group: '', user_id: null })
+}
+
+const removeGroupOwnerRow = (index: number) => {
+  catalogConfig.value.group_owner_rows.splice(index, 1)
+}
+
+const saveCatalogConfig = async () => {
+  loading.value.catalog_save = true
+  try {
+    const group_owner_map: Record<string, number> = {}
+    for (const row of catalogConfig.value.group_owner_rows) {
+      const g = row.group.trim()
+      if (g && row.user_id) {
+        group_owner_map[g] = row.user_id
+      }
+    }
+    await axios.put('/api/portal/catalog/settings', {
+      default_owner_strategy: catalogConfig.value.default_owner_strategy,
+      group_owner_map,
+    })
+    showToast('目录配置已保存', 'success')
+    await fetchCatalogConfig()
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '保存失败', 'error')
+  } finally {
+    loading.value.catalog_save = false
+  }
+}
+
 const showMaskingModal = ref(false)
 const editingRule = ref<MaskingRule>({
   rule_name: '',
@@ -571,12 +637,13 @@ onMounted(() => {
 })
 
 
-const switchTab = (tab: 'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking') => {
+const switchTab = (tab: 'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'catalog') => {
   activeTab.value = tab
   if (tab === 'pools' && pools.value.length === 0) fetchPools()
   if (tab === 'logs') fetchMaintenanceLogs()
   if (tab === 'ai') fetchAiConfig()
   if (tab === 'masking') fetchMaskingConfig()
+  if (tab === 'catalog') fetchCatalogConfig()
   if (tab === 'ratelimit') {
     fetchRateLimitConfig()
     fetchPeakData()
@@ -618,6 +685,9 @@ const formatDateTime = (val: string) => {
         </button>
         <button @click="switchTab('masking')" :class="[activeTab === 'masking' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
           <ShieldCheckIcon class="h-5 w-5 mr-2" /> 数据脱敏
+        </button>
+        <button @click="switchTab('catalog')" :class="[activeTab === 'catalog' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center']">
+          <CircleStackIcon class="h-5 w-5 mr-2" /> 数据产品目录
         </button>
       </nav>
     </div>
@@ -839,6 +909,73 @@ const formatDateTime = (val: string) => {
           <span v-if="loading.ai_save">保存中...</span>
           <span v-else>保存配置</span>
         </button>
+      </div>
+    </div>
+
+    <!-- Tab Content: Data Product Catalog -->
+    <div v-show="activeTab === 'catalog'" class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+      <div class="p-6 border-b border-gray-100">
+        <h3 class="text-lg font-bold text-gray-900">数据产品目录</h3>
+        <p class="text-sm text-gray-500 mt-1">配置从资源发布到目录时的默认负责人策略</p>
+      </div>
+      <div v-if="loading.catalog_load" class="p-12 text-center text-gray-400">加载中...</div>
+      <div v-else class="p-6 space-y-6">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">默认负责人策略</label>
+          <select
+            v-model="catalogConfig.default_owner_strategy"
+            class="w-full max-w-md border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="publisher">发布人（当前操作者）</option>
+            <option value="group_owner">按业务域映射（见下表）</option>
+            <option value="none">不自动指定</option>
+          </select>
+          <p class="text-xs text-gray-400 mt-2">
+            从「接口管理」发布资源到目录时，自动写入产品负责人。选「按业务域映射」时需配置下表。
+          </p>
+        </div>
+
+        <div v-if="catalogConfig.default_owner_strategy === 'group_owner'" class="space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="text-sm font-medium text-gray-700">业务域 → 负责人</label>
+            <button type="button" class="text-sm text-indigo-600 hover:text-indigo-800" @click="addGroupOwnerRow">
+              + 添加映射
+            </button>
+          </div>
+          <div v-if="!catalogConfig.group_owner_rows.length" class="text-sm text-gray-400 bg-gray-50 rounded-lg p-4">
+            暂无映射，请点击「添加映射」
+          </div>
+          <div
+            v-for="(row, idx) in catalogConfig.group_owner_rows"
+            :key="idx"
+            class="flex flex-wrap gap-2 items-center"
+          >
+            <input
+              v-model="row.group"
+              placeholder="业务域名称（与 resource_group 一致）"
+              class="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            />
+            <select v-model="row.user_id" class="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <option :value="null">选择负责人</option>
+              <option v-for="u in catalogUsers" :key="u.id" :value="u.id">
+                {{ u.user_name }}{{ u.remark ? ` (${u.remark})` : '' }}
+              </option>
+            </select>
+            <button type="button" class="text-sm text-red-600 hover:text-red-800 px-2" @click="removeGroupOwnerRow(idx)">
+              删除
+            </button>
+          </div>
+        </div>
+
+        <div class="pt-2">
+          <button
+            :disabled="loading.catalog_save"
+            class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+            @click="saveCatalogConfig"
+          >
+            {{ loading.catalog_save ? '保存中...' : '保存目录配置' }}
+          </button>
+        </div>
       </div>
     </div>
 

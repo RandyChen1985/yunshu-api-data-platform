@@ -126,6 +126,7 @@ async def database_connection_exception_handler(request: Request, exc: Exception
     Handle Database Connection Errors.
     Return 503 Service Unavailable with specific business code.
     """
+    logging.error("Database error on %s %s: %s", request.method, request.url.path, exc)
     trace_id = getattr(request.state, "trace_id", str(uuid.uuid4()))
     return JSONResponse(
         status_code=503,

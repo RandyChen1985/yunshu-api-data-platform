@@ -78,7 +78,16 @@ const ACTION_TYPES = [
   { value: 'DS_EDIT', label: '数据源变更' },
   { value: 'RES_EDIT', label: '资源配置变更' },
   { value: 'USER_MANAGE', label: '用户管理' },
-  { value: 'CONFIG_SAVE', label: '系统设置' }
+  { value: 'CONFIG_SAVE', label: '系统设置' },
+  { value: 'CATALOG_PUBLISH', label: '目录发布' },
+  { value: 'CATALOG_BATCH_PUBLISH', label: '目录批量上架' },
+  { value: 'CATALOG_UNPUBLISH', label: '目录下架' },
+  { value: 'CATALOG_PRODUCT_UPDATE', label: '目录产品编辑' },
+  { value: 'CATALOG_ACCESS_REQUEST', label: '目录权限申请' },
+  { value: 'CATALOG_ACCESS_APPROVE', label: '目录权限审批通过' },
+  { value: 'CATALOG_ACCESS_REJECT', label: '目录权限审批拒绝' },
+  { value: 'CATALOG_ACCESS_REVOKE', label: '目录权限收回' },
+  { value: 'CATALOG_BATCH_ASSIGN_OWNER', label: '目录批量指定负责人' },
 ]
 
 const getActionTypeLabel = (val?: string) => {
@@ -88,6 +97,7 @@ const getActionTypeLabel = (val?: string) => {
 
 const getActionTypeColor = (val?: string) => {
   if (!val) return 'bg-gray-100 text-gray-600'
+  if (val.startsWith('CATALOG_')) return 'bg-teal-50 text-teal-700 border-teal-100'
   if (val.startsWith('LAB_')) return 'bg-blue-50 text-blue-700 border-blue-100'
   if (val.startsWith('META_')) return 'bg-indigo-50 text-indigo-700 border-indigo-100'
   if (val.includes('QUERY') || val.includes('EXECUTE')) return 'bg-green-50 text-green-700 border-green-100'

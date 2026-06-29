@@ -97,6 +97,33 @@ const router = createRouter({
           meta: { menuCode: 'menu:metadata' }
         },
         {
+          path: 'catalog',
+          name: 'Catalog',
+          component: () => import('../views/Catalog.vue')
+        },
+        {
+          path: 'catalog/:key/edit',
+          name: 'CatalogProductEdit',
+          component: () => import('../views/CatalogProductEdit.vue')
+        },
+        {
+          path: 'catalog/:key',
+          name: 'CatalogDetail',
+          component: () => import('../views/CatalogDetail.vue')
+        },
+        {
+          path: 'catalog-requests',
+          name: 'CatalogAccessRequests',
+          component: () => import('../views/CatalogAccessRequests.vue'),
+          meta: { menuCode: 'menu:catalog:requests' }
+        },
+        {
+          path: 'asset-panorama',
+          name: 'AssetPanorama',
+          component: () => import('../views/AssetPanorama.vue'),
+          meta: { menuCode: 'menu:asset-panorama' }
+        },
+        {
           path: 'settings',
           name: 'SystemSettings',
           component: () => import('../views/SystemConfig.vue'),
@@ -148,6 +175,21 @@ router.beforeEach(async (to: any, _from: any, next: any) => {
       }
 
       if (!userMenus.includes(targetMenu)) {
+        // 目录权限申请：产品负责人 / 审批元素权限可进入，不要求 menu:catalog:requests
+        if (targetMenu === 'menu:catalog:requests') {
+          const userElements = userInfo.permissions?.elements || []
+          const canBySession = sessionStorage.getItem('catalog_can_access_requests') === '1'
+          const ownedProducts = Number(sessionStorage.getItem('catalog_owned_products') || 0)
+          if (
+            userElements.includes('element:catalog:review') ||
+            canBySession ||
+            ownedProducts > 0
+          ) {
+            next()
+            return
+          }
+        }
+
         // Optimization: If accessing Overview (default page) but denied,
         // try to redirect to the first accessible page instead of Forbidden.
         if (to.name === 'Overview' && userRole !== 'admin') {

@@ -568,6 +568,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { useToast } from '../composables/useToast'
 import Switch from '../components/Switch.vue'
@@ -579,6 +580,7 @@ import {
 } from '@heroicons/vue/24/outline'
 
 const { showToast } = useToast()
+const route = useRoute()
 
 // --- UI Constants ---
 const MENU_TREE = [
@@ -587,6 +589,17 @@ const MENU_TREE = [
       children: [
         { id: 'element:overview:stats', label: '查看全量系统统计' }
       ] 
+    },
+    {
+      id: 'menu:asset-panorama', label: '数据资产全景',
+      children: []
+    },
+    {
+      id: 'menu:catalog:requests', label: '目录权限申请',
+      children: [
+        { id: 'element:catalog:review', label: '审批目录访问申请' },
+        { id: 'element:catalog:manage', label: '编辑数据产品信息' }
+      ]
     },
     { 
       id: 'menu:lab', label: 'SQL 实验室', 
@@ -599,7 +612,7 @@ const MENU_TREE = [
         { id: 'element:lab:mode_analyst', label: '模式：自助取数' }
       ] 
     },
-        { id: 'menu:resources', label: '接口管理', children: [{ id: 'element:resource:create', label: '新建接口' }, { id: 'element:resource:edit', label: '编辑接口' }, { id: 'element:resource:delete', label: '删除接口' }, { id: 'element:resource:import', label: '导入配置' }, { id: 'element:resource:export', label: '导出配置' }, { id: 'element:resource:manage_special', label: '管理特殊资源(TTL/SQL测试)' }] },
+        { id: 'menu:resources', label: '接口管理', children: [{ id: 'element:resource:create', label: '新建接口' }, { id: 'element:resource:edit', label: '编辑接口' }, { id: 'element:resource:delete', label: '删除接口' }, { id: 'element:resource:import', label: '导入配置' }, { id: 'element:resource:export', label: '导出配置' }, { id: 'element:resource:manage_special', label: '管理特殊资源(TTL/SQL测试)' }, { id: 'element:catalog:publish', label: '发布到产品目录' }] },
         
         { id: 'menu:metadata', label: '元数据管理', children: [
             { id: 'element:metadata:view', label: '查看：元数据详情' },
@@ -1247,12 +1260,27 @@ const formatDate = (dateStr: string) => {
 }
 
 // Load users on mount
-onMounted(() => {
-  fetchUsers()
+onMounted(async () => {
+  await fetchUsers()
   fetchAvailableResources()
   fetchAvailableUiPermissions()
   fetchAvailableRoles()
   fetchAllDataSources()
+
+  const uid = route.query.user_id
+  if (uid) {
+    try {
+      const apiKey = localStorage.getItem('api_key')
+      const response = await axios.get('/api/portal/management/users', {
+        headers: { 'X-API-Key': apiKey },
+        params: { page: 1, size: 1000 },
+      })
+      const target = response.data.items?.find((u: any) => String(u.id) === String(uid))
+      if (target) await editUser(target)
+    } catch {
+      /* ignore */
+    }
+  }
 })
 
 

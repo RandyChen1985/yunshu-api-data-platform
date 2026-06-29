@@ -1,0 +1,436 @@
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Body
+from typing import List, Optional, Union
+from datetime import datetime
+
+from fastapi.responses import StreamingResponse
+
+from app.core.dependencies import require_api_key, require_admin, require_permission
+from app.schemas.catalog import (
+    ProductListItem,
+    ProductDetail,
+    ProductUpdateRequest,
+    PublishFromResourceRequest,
+    DomainStat,
+    PanoramaResponse,
+    AccessRequestCreate,
+    AccessRequestHandle,
+    AccessRequestItem,
+    BatchPublishResult,
+    BatchAssignOwnerRequest,
+    BatchAssignOwnerResult,
+    PaginatedProductList,
+    UnpublishRequest,
+    RevokeAccessRequest,
+    AccessHoldersResponse,
+    CatalogSettingsResponse,
+    CatalogSettingsUpdate,
+    ProductResourcesUpdate,
+)
+from app.services.catalog_service import CatalogService, STATUS_DRAFT, REQUEST_PENDING
+from app.api.portal.endpoints.dashboard import is_admin
+
+router = APIRouter()
+
+
+def _can_view_panorama(user: dict) -> bool:
+    if is_admin(user):
+        return True
+    menus = user.get("permissions", {}).get("menus", [])
+    return "menu:asset-panorama" in menus
+
+
+def _can_publish(user: dict) -> bool:
+    if is_admin(user):
+        return True
+    perms = user.get("permissions", {}).get("elements", [])
+    return "element:catalog:publish" in perms or "element:resource:edit" in perms
+
+
+def _can_export(user: dict) -> bool:
+    if is_admin(user):
+        return True
+    menus = user.get("permissions", {}).get("menus", [])
+    perms = user.get("permissions", {}).get("elements", [])
+    return "menu:asset-panorama" in menus or "element:catalog:manage" in perms
+
+
+def _can_manage_catalog(user: dict) -> bool:
+    if is_admin(user):
+        return True
+    return "element:catalog:manage" in user.get("permissions", {}).get("elements", [])
+
+
+@router.get("/products", response_model=Union[List[ProductListItem], PaginatedProductList])
+async def list_products(
+    domain: Optional[str] = None,
+    q: Optional[str] = Query(None, description="搜索关键词"),
+    sort: str = Query("calls", description="排序: calls | newest | name | pending"),
+    only_accessible: bool = False,
+    only_no_access: bool = False,
+    mine_only: bool = False,
+    include_draft: bool = False,
+    page: Optional[int] = Query(None, ge=1, description="页码，传入则返回分页结构"),
+    page_size: int = Query(24, ge=1, le=100),
+    user: dict = Depends(require_api_key),
+):
+    """数据产品目录列表（已发布产品全员可见元数据）"""
+    return await CatalogService.list_products(
+        user,
+        domain=domain,
+        q=q,
+        sort=sort,
+        only_accessible=only_accessible,
+        only_no_access=only_no_access,
+        mine_only=mine_only,
+        include_draft=include_draft and is_admin(user),
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/products/mine-summary")
+async def get_mine_summary(user: dict = Depends(require_api_key)):
+    """当前用户负责的产品数与待审批申请数"""
+    return await CatalogService.get_mine_summary(user)
+
+
+@router.get("/products/export")
+async def export_products(user: dict = Depends(require_api_key)):
+    """导出已发布产品清单 CSV"""
+    if not _can_export(user):
+        raise HTTPException(status_code=403, detail="无导出权限")
+    content = await CatalogService.export_products_csv(user)
+    filename = f"catalog_products_{datetime.now().strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/products/sections")
+async def get_product_sections(user: dict = Depends(require_api_key)):
+    """热门 / 最新 / 精选分区"""
+    return await CatalogService.get_sections(user)
+
+
+@router.get("/domains", response_model=List[DomainStat])
+async def list_domains(user: dict = Depends(require_api_key)):
+    return await CatalogService.list_domains(user)
+
+
+@router.post("/products/publish-from-resource")
+async def publish_from_resource(
+    request_in: Request,
+    body: PublishFromResourceRequest,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_PUBLISH"
+    if not _can_publish(user):
+        raise HTTPException(status_code=403, detail="无发布权限")
+    try:
+        result = await CatalogService.upsert_from_resource(
+            body.resource_key,
+            user=user,
+            display_name=body.display_name,
+            summary=body.summary,
+            domain=body.domain,
+            owner_user_id=body.owner_user_id,
+            publish=body.publish,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/products/batch-publish", response_model=BatchPublishResult)
+async def batch_publish_all_drafts(
+    request_in: Request,
+    user: dict = Depends(require_admin),
+):
+    """批量发布所有草稿产品（初始化后一键上架）"""
+    request_in.state.action_type = "CATALOG_BATCH_PUBLISH"
+    return await CatalogService.batch_publish_drafts()
+
+
+@router.get("/assign-owner-users")
+async def list_assign_owner_users(user: dict = Depends(require_api_key)):
+    if not _can_manage_catalog(user):
+        raise HTTPException(status_code=403, detail="无权限")
+    return await CatalogService.list_active_users()
+
+
+@router.get("/products/without-owner-count")
+async def count_products_without_owner(user: dict = Depends(require_api_key)):
+    if not _can_manage_catalog(user):
+        raise HTTPException(status_code=403, detail="无权限")
+    return {"count": await CatalogService.count_products_without_owner()}
+
+
+@router.post("/products/batch-assign-owner", response_model=BatchAssignOwnerResult)
+async def batch_assign_owner(
+    request_in: Request,
+    body: BatchAssignOwnerRequest,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_BATCH_ASSIGN_OWNER"
+    if not _can_manage_catalog(user):
+        raise HTTPException(status_code=403, detail="无批量指定负责人权限")
+    try:
+        return await CatalogService.batch_assign_owner(
+            user,
+            body.owner_user_id,
+            product_keys=body.product_keys,
+            only_without_owner=body.only_without_owner,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/products/{product_key}/edit-meta")
+async def get_product_edit_meta(product_key: str, user: dict = Depends(require_api_key)):
+    try:
+        return await CatalogService.get_edit_meta(user, product_key)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.get("/products/{product_key}", response_model=ProductDetail)
+async def get_product_detail(product_key: str, user: dict = Depends(require_api_key)):
+    product = await CatalogService.get_product(product_key, user)
+    if not product:
+        raise HTTPException(status_code=404, detail="产品不存在或未发布")
+    return product
+
+
+@router.put("/products/{product_key}")
+async def update_product(
+    request_in: Request,
+    product_key: str,
+    body: ProductUpdateRequest,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_PRODUCT_UPDATE"
+    if not await CatalogService.can_edit_product(user, product_key):
+        raise HTTPException(status_code=403, detail="无产品编辑权限")
+    ok = await CatalogService.update_product(product_key, body.model_dump(exclude_unset=True))
+    if not ok:
+        raise HTTPException(status_code=404, detail="产品不存在或无变更")
+    return {"success": True}
+
+
+@router.put("/products/{product_key}/resources")
+async def update_product_resources(
+    request_in: Request,
+    product_key: str,
+    body: ProductResourcesUpdate,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_PRODUCT_UPDATE"
+    if not await CatalogService.can_edit_product(user, product_key):
+        raise HTTPException(status_code=403, detail="无产品编辑权限")
+    try:
+        resources = [r.model_dump() for r in body.resources]
+        await CatalogService.update_product_resources(product_key, resources)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True}
+
+
+@router.get("/settings", response_model=CatalogSettingsResponse)
+async def get_catalog_settings(user: dict = Depends(require_permission("element:config:save"))):
+    return await CatalogService.get_catalog_settings()
+
+
+@router.put("/settings", response_model=CatalogSettingsResponse)
+async def update_catalog_settings(
+    body: CatalogSettingsUpdate,
+    user: dict = Depends(require_permission("element:config:save")),
+):
+    try:
+        await CatalogService.update_catalog_settings(
+            default_owner_strategy=body.default_owner_strategy,
+            group_owner_map=body.group_owner_map,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return await CatalogService.get_catalog_settings()
+
+
+@router.post("/products/{product_key}/publish")
+async def publish_product(
+    request_in: Request,
+    product_key: str,
+    user: dict = Depends(require_admin),
+):
+    request_in.state.action_type = "CATALOG_PUBLISH"
+    try:
+        ok = await CatalogService.publish_product(product_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="产品不存在")
+    return {"success": True}
+
+
+@router.get("/products/{product_key}/unpublish-preview", response_model=AccessHoldersResponse)
+async def unpublish_preview(product_key: str, user: dict = Depends(require_admin)):
+    try:
+        return await CatalogService.get_product_access_holders(product_key)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/products/{product_key}/access-holders", response_model=AccessHoldersResponse)
+async def list_access_holders(product_key: str, user: dict = Depends(require_api_key)):
+    if not await CatalogService.can_revoke_access(user, product_key):
+        raise HTTPException(status_code=403, detail="无权限查看")
+    try:
+        return await CatalogService.get_product_access_holders(product_key)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/products/{product_key}/revoke-access")
+async def revoke_product_access(
+    request_in: Request,
+    product_key: str,
+    body: RevokeAccessRequest,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_ACCESS_REVOKE"
+    try:
+        removed = await CatalogService.revoke_product_access(
+            user,
+            product_key,
+            user_id=body.user_id,
+            revoke_all=body.revoke_all,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, "removed": removed}
+
+
+@router.post("/products/{product_key}/unpublish")
+async def unpublish_product(
+    request_in: Request,
+    product_key: str,
+    body: UnpublishRequest = Body(default_factory=UnpublishRequest),
+    user: dict = Depends(require_admin),
+):
+    request_in.state.action_type = "CATALOG_UNPUBLISH"
+    ok = await CatalogService.unpublish_product(
+        product_key, revoke_permissions=body.revoke_permissions
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="产品不存在")
+    return {"success": True}
+
+
+@router.post("/products/{product_key}/access-request")
+async def create_access_request(
+    request_in: Request,
+    product_key: str,
+    body: AccessRequestCreate,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_ACCESS_REQUEST"
+    try:
+        return await CatalogService.create_access_request(user, product_key, body.message)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/access-requests", response_model=List[AccessRequestItem])
+async def list_access_requests(
+    status: Optional[int] = Query(None, description="0待审批 1已通过 2已拒绝，不传=全部"),
+    user: dict = Depends(require_api_key),
+):
+    return await CatalogService.list_access_requests(user, status=status)
+
+
+@router.get("/access-requests/pending-count")
+async def pending_request_count(user: dict = Depends(require_api_key)):
+    count = await CatalogService.count_pending_requests(user)
+    summary = await CatalogService.get_mine_summary(user)
+    can_access = CatalogService.can_access_catalog_requests(
+        user, owned_products=summary["owned_products"]
+    )
+    return {
+        "count": count,
+        "owned_products": summary["owned_products"],
+        "show_requests_menu": can_access,
+        "can_access_requests": can_access,
+    }
+
+
+@router.post("/access-requests/{request_id}/approve")
+async def approve_access_request(
+    request_in: Request,
+    request_id: int,
+    body: AccessRequestHandle,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_ACCESS_APPROVE"
+    try:
+        ok = await CatalogService.approve_access_request(request_id, user, body.remark)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="申请不存在或已处理")
+    return {"success": True}
+
+
+@router.post("/access-requests/{request_id}/reject")
+async def reject_access_request(
+    request_in: Request,
+    request_id: int,
+    body: AccessRequestHandle,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_ACCESS_REJECT"
+    try:
+        ok = await CatalogService.reject_access_request(request_id, user, body.remark)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="申请不存在或已处理")
+    return {"success": True}
+
+
+@router.post("/access-requests/{request_id}/revoke-access")
+async def revoke_access_by_request(
+    request_in: Request,
+    request_id: int,
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_ACCESS_REVOKE"
+    try:
+        removed = await CatalogService.revoke_access_by_request(request_id, user)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, "removed": removed}
+
+
+@router.get("/panorama", response_model=PanoramaResponse)
+async def get_asset_panorama(
+    days: int = Query(30, ge=1, le=90),
+    user: dict = Depends(require_api_key),
+):
+    if not _can_view_panorama(user):
+        raise HTTPException(status_code=403, detail="无资产全景查看权限")
+    return await CatalogService.get_panorama(days)
+
+
+@router.get("/status-map")
+async def get_catalog_status_map(user: dict = Depends(require_api_key)):
+    """资源管理页用：查询各资源对应的目录发布状态"""
+    return await CatalogService.get_product_status_map()
