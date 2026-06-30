@@ -62,6 +62,7 @@
 | `/api/portal/catalog/access-requests` | `test_catalog.py` | 权限申请列表、审批筛选 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/access-requests/status-counts` | `test_catalog.py` | 审批页各状态 Tab 数量统计 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/access-requests/mine` | `test_catalog.py` | 当前用户提交的申请列表 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/access-requests/mine/status-counts` | `test_catalog.py` | 我的申请页各状态 Tab 数量统计 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products/mine-summary` | `test_catalog.py` | 我的产品汇总、待审批数 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products/export` | `test_catalog.py` | 已发布产品 CSV 导出 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products?only_no_access` | `test_catalog.py` | 无权限产品筛选 | ✅ 通过 | 2026-06-29 |

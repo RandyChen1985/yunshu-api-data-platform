@@ -167,6 +167,16 @@ async def test_catalog_access_request_status_counts(client: AsyncClient, admin_h
 
 
 @pytest.mark.asyncio
+async def test_catalog_my_access_request_status_counts(client: AsyncClient, admin_headers: dict):
+    response = await client.get("/api/portal/catalog/access-requests/mine/status-counts", headers=admin_headers)
+    assert response.status_code == 200
+    data = response.json()
+    for key in ("0", "1", "2", "3", "all"):
+        assert key in data
+        assert isinstance(data[key], int)
+
+
+@pytest.mark.asyncio
 async def test_catalog_batch_assign_owner(client: AsyncClient, admin_headers: dict):
     products = await client.get(
         "/api/portal/catalog/products?include_draft=true",

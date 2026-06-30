@@ -716,15 +716,14 @@ const filteredMenuGroups = computed(() => {
 
       <!-- Main Scrollable Content -->
       <main class="flex-1 overflow-y-auto bg-gray-100 p-4 sm:p-6 lg:p-8 custom-scrollbar">
-        <div
+        <router-link
           v-if="catalogBadge.count > 0 && catalogBadge.can_access_requests"
-          class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          to="/dashboard/catalog-requests"
+          class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100/80 transition-colors"
         >
           <span>您有 <strong>{{ catalogBadge.count }}</strong> 条目录权限申请待审批</span>
-          <router-link to="/dashboard/catalog-requests" class="font-medium text-amber-800 hover:text-amber-950 whitespace-nowrap">
-            立即处理 →
-          </router-link>
-        </div>
+          <span class="font-medium text-amber-800 whitespace-nowrap">立即处理 →</span>
+        </router-link>
         <router-view v-slot="{ Component }">
            <transition name="page" mode="out-in">
               <component :is="Component" :key="$route.fullPath" />

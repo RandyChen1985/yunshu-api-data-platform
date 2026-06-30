@@ -213,7 +213,7 @@ onMounted(async () => {
   <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">数据产品目录</h1>
+        <h1 class="text-lg sm:text-2xl font-bold text-gray-900">数据产品目录</h1>
         <p class="text-sm text-gray-500 mt-1">浏览、发现与试用已发布的数据 API 产品</p>
       </div>
       <div class="flex items-center gap-3">
@@ -358,7 +358,7 @@ onMounted(async () => {
 
     <!-- Product list -->
     <div v-if="loading" class="text-center py-16 text-gray-400">加载中...</div>
-    <div v-else-if="products.length === 0" class="text-center py-16 text-gray-400">
+    <div v-else-if="products.length === 0" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100">
       <template v-if="viewTab === 'mine'">您暂未负责任何数据产品</template>
       <template v-else>暂无已发布的数据产品。管理员可在「接口管理」中发布资源到目录。</template>
     </div>

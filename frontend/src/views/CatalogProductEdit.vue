@@ -227,7 +227,7 @@ onMounted(load)
 
     <div v-if="loading" class="text-center py-20 text-gray-400">加载中...</div>
     <template v-else>
-      <h1 class="text-2xl font-bold text-gray-900">编辑数据产品</h1>
+      <h1 class="text-lg sm:text-2xl font-bold text-gray-900">编辑数据产品</h1>
       <p class="text-sm text-gray-500">完善简介、负责人与关联 API 后方可发布上架</p>
 
       <div

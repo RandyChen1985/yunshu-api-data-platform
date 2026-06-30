@@ -9,6 +9,7 @@ const router = useRouter()
 const { showToast } = useToast()
 const loading = ref(true)
 const requests = ref<any[]>([])
+const statusCounts = ref<Record<string, number>>({ '0': 0, '1': 0, '2': 0, '3': 0, all: 0 })
 const statusFilter = ref<number | ''>('')
 const syncingKey = ref<string | null>(null)
 
@@ -37,6 +38,24 @@ const statusClass = (status: number) => {
   return 'bg-red-100 text-red-700'
 }
 
+const fetchStatusCounts = async () => {
+  try {
+    const res = await axios.get('/api/portal/catalog/access-requests/mine/status-counts')
+    statusCounts.value = res.data
+  } catch {
+    statusCounts.value = { '0': 0, '1': 0, '2': 0, '3': 0, all: 0 }
+  }
+}
+
+const tabCount = (v: number | '') => {
+  if (v === '') return statusCounts.value.all ?? 0
+  return statusCounts.value[String(v)] ?? 0
+}
+
+const refreshAll = async () => {
+  await Promise.all([fetchRequests(), fetchStatusCounts()])
+}
+
 const fetchRequests = async () => {
   loading.value = true
   try {
@@ -55,7 +74,7 @@ const syncAccess = async (productKey: string) => {
   syncingKey.value = productKey
   try {
     const res = await axios.post(`/api/portal/catalog/products/${encodeURIComponent(productKey)}/sync-access`)
-    await fetchRequests()
+    await refreshAll()
     if (res.data.has_access) {
       showToast('权限已生效', 'success')
     } else {
@@ -78,7 +97,10 @@ const playgroundRoute = (req: {
   return buildPlaygroundRoute({ resource_key: key, resource_group: req.resource_group })
 }
 
-onMounted(fetchRequests)
+onMounted(() => {
+  fetchStatusCounts()
+  fetchRequests()
+})
 </script>
 
 <template>
@@ -93,15 +115,22 @@ onMounted(fetchRequests)
         v-for="opt in statusOptions"
         :key="String(opt.v)"
         :class="statusFilter === opt.v ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'"
-        class="px-3 py-1.5 rounded-lg text-sm font-medium"
+        class="px-3 py-1.5 rounded-lg text-sm font-medium inline-flex items-center gap-1.5"
         @click="statusFilter = opt.v; fetchRequests()"
       >
         {{ opt.l }}
+        <span
+          v-if="tabCount(opt.v) > 0"
+          :class="statusFilter === opt.v ? 'bg-indigo-200 text-indigo-800' : 'bg-gray-200 text-gray-600'"
+          class="text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold"
+        >
+          {{ tabCount(opt.v) }}
+        </span>
       </button>
     </div>
 
     <div v-if="loading" class="text-center py-16 text-gray-400">加载中...</div>
-    <div v-else-if="!requests.length" class="text-center py-16 text-gray-400 bg-white rounded-xl border">
+    <div v-else-if="!requests.length" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100">
       暂无申请记录。可在
       <router-link to="/dashboard/catalog" class="text-indigo-600 hover:text-indigo-800 font-medium">产品目录</router-link>
       中浏览产品并提交申请。

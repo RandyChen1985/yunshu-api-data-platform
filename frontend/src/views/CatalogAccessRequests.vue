@@ -240,7 +240,7 @@ onMounted(() => {
     </div>
 
     <div v-if="loading" class="text-center py-20 text-gray-400">加载中...</div>
-    <div v-else-if="!requests.length" class="text-center py-20 text-gray-400 bg-white rounded-xl border">
+    <div v-else-if="!requests.length" class="text-center py-20 text-gray-400 bg-white rounded-xl border border-gray-100">
       暂无申请记录
     </div>
     <div v-else class="space-y-4">

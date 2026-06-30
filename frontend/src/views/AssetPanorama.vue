@@ -76,7 +76,7 @@ onMounted(fetchPanorama)
   <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">数据资产全景</h1>
+        <h1 class="text-lg sm:text-2xl font-bold text-gray-900">数据资产全景</h1>
         <p class="text-sm text-gray-500 mt-1">数据产品盘点、使用热度与治理健康度一览</p>
       </div>
       <div class="flex items-center gap-3">
@@ -97,23 +97,23 @@ onMounted(fetchPanorama)
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-white rounded-xl border p-5 shadow-sm">
           <p class="text-xs text-gray-500 uppercase tracking-wide">已发布产品</p>
-          <p class="text-3xl font-bold text-gray-900 mt-1">{{ data.published_count }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{{ data.published_count }}</p>
         </div>
         <div class="bg-white rounded-xl border p-5 shadow-sm">
           <p class="text-xs text-gray-500 uppercase tracking-wide">业务域</p>
-          <p class="text-3xl font-bold text-indigo-600 mt-1">{{ data.domain_count }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-indigo-600 mt-1">{{ data.domain_count }}</p>
         </div>
         <div class="bg-white rounded-xl border p-5 shadow-sm">
           <p class="text-xs text-gray-500 uppercase tracking-wide">数据源类型</p>
-          <p class="text-3xl font-bold text-gray-900 mt-1">{{ Object.keys(data.datasource_types || {}).length }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{{ Object.keys(data.datasource_types || {}).length }}</p>
         </div>
         <div class="bg-white rounded-xl border p-5 shadow-sm">
           <p class="text-xs text-gray-500 uppercase tracking-wide">总调用量</p>
-          <p class="text-3xl font-bold text-purple-600 mt-1">{{ formatNum(data.total_calls) }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-purple-600 mt-1">{{ formatNum(data.total_calls) }}</p>
         </div>
         <div class="bg-white rounded-xl border p-5 shadow-sm col-span-2 lg:col-span-1">
           <p class="text-xs text-gray-500 uppercase tracking-wide">活跃消费方</p>
-          <p class="text-3xl font-bold text-green-600 mt-1">{{ data.active_consumers }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-green-600 mt-1">{{ data.active_consumers }}</p>
         </div>
       </div>
 

@@ -286,7 +286,7 @@ onUnmounted(() => {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div class="flex items-center gap-2 flex-wrap">
-              <h1 class="text-2xl font-bold text-gray-900">{{ product.display_name }}</h1>
+              <h1 class="text-lg sm:text-2xl font-bold text-gray-900">{{ product.display_name }}</h1>
               <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{{ product.domain }}</span>
               <span
                 v-if="accessBadge.text"

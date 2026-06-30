@@ -1728,3 +1728,31 @@ class CatalogService:
             else:
                 r["access_active"] = False
         return rows
+
+    @classmethod
+    async def count_my_access_requests_by_status(cls, user: Dict) -> Dict[str, int]:
+        """当前用户各状态申请数量"""
+        user_id = int(user["user_id"])
+        sql = """
+            SELECT r.status, COUNT(*) AS cnt
+            FROM data_product_access_requests r
+            WHERE r.user_id = %s
+            GROUP BY r.status
+        """
+        counts = {0: 0, 1: 0, 2: 0, 3: 0}
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, (user_id,))
+                rows = await cursor.fetchall()
+        for row in rows:
+            status = int(row[0])
+            if status in counts:
+                counts[status] = int(row[1] or 0)
+        total = sum(counts.values())
+        return {
+            "0": counts[0],
+            "1": counts[1],
+            "2": counts[2],
+            "3": counts[3],
+            "all": total,
+        }

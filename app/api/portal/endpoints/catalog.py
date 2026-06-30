@@ -409,6 +409,12 @@ async def list_my_access_requests(
     return await CatalogService.list_my_access_requests(user, status=status)
 
 
+@router.get("/access-requests/mine/status-counts")
+async def my_access_request_status_counts(user: dict = Depends(require_api_key)):
+    """我的申请页各 Tab 数量统计"""
+    return await CatalogService.count_my_access_requests_by_status(user)
+
+
 @router.get("/access-requests", response_model=List[AccessRequestItem])
 async def list_access_requests(
     status: Optional[int] = Query(None, description="0待审批 1已通过 2已拒绝，不传=全部"),

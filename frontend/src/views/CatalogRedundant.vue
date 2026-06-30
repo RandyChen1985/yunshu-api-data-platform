@@ -78,7 +78,7 @@ onMounted(fetchItems)
   <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">冗余产品清理</h1>
+        <h1 class="text-lg sm:text-2xl font-bold text-gray-900">冗余产品清理</h1>
         <p class="text-sm text-gray-500 mt-1">
           多个 API 合并到同一产品后，原先「一资源一产品」产生的重复记录可在此归档
         </p>
@@ -89,7 +89,7 @@ onMounted(fetchItems)
     </div>
 
     <div v-if="loading" class="text-center py-16 text-gray-400">加载中...</div>
-    <div v-else-if="!items.length" class="text-center py-16 text-gray-400 bg-white rounded-xl border">
+    <div v-else-if="!items.length" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100">
       暂无冗余产品，目录数据整洁 ✓
     </div>
     <div v-else class="space-y-3">
