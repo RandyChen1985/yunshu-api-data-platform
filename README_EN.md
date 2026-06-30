@@ -16,6 +16,7 @@ The platform focuses on the following core capability matrix:
 *   🚀 **Resource-as-an-API**: Dual-mode `TABLE` zero-code mapping and `SQL` logic encapsulation; Jinja2 dynamic templates + unified DSL query entry.
 *   🧪 **SQL Lab**: Online editing, debugging, AI-assisted SQL generation and repair; one-click publish to production API resources.
 *   🗂️ **Metadata & Data Source Governance**: Multi-source connections (MySQL / ClickHouse / Oracle), semantic metadata, health scoring, and fine-grained RBAC.
+*   📦 **Data Product Catalog**: Productized API publishing, domain browsing, access request/approval workflow, asset panorama KPIs, and call-volume insights.
 *   🛡️ **Enterprise Security & Audit**: Daily-sharded audit logs, AST-based SQL guards, API Key + Session dual auth, data masking policies.
 *   📊 **Full-Stack Observability**: 24h/7d call trends, Top rankings, minute-level stats aggregation, connection pool health monitoring.
 *   🔌 **Open Integration**: Standardized `/api/v1` public APIs and Portal admin APIs; serves as the data foundation for **[Yunshu AI Agent Platform](https://github.com/RandyChen1985/yunshu-ai-agent-platform)**.
@@ -37,6 +38,8 @@ The platform focuses on the following core capability matrix:
 | ![Resource Management](docs/images/resource.png) | ![SQL Lab](docs/images/sqllab.png) |
 | **🛡️ RBAC & Roles** | **📋 Full-Chain Audit Logs** |
 | ![RBAC](docs/images/rbac.png) | ![Audit Logs](docs/images/audit.png) |
+| **📦 Data Product Catalog** | **🌐 Asset Panorama** |
+| ![Data Product Catalog](docs/images/catalog.png) | ![Asset Panorama](docs/images/panorama.png) |
 
 ---
 
@@ -75,15 +78,24 @@ The platform focuses on the following core capability matrix:
 *   **Minute-level aggregation**: `APScheduler` async rollup into `api_access_stats_1m` for fast dashboards.
 *   **Connection pool monitoring**: Per-data-source pool activity and health visualization.
 
+### 6. 📦 Data Product Catalog & Asset Panorama
+
+*   **Product publishing**: One-click or batch publish from resource management; full lifecycle from draft → published → offline.
+*   **Catalog browsing**: Filter by business domain, call volume, and featured picks; published product metadata visible to all users with clear access status.
+*   **Access requests**: Users without permission submit requests from product detail pages; owners/admins approve and resource permissions sync automatically.
+*   **Asset panorama**: Domain distribution, zero-call alerts, KPI stats, and call trends (`/api/portal/catalog/panorama`).
+*   **Governance tools**: Redundant product detection, CSV export, batch owner assignment, and Playground quick-debug entry points.
+
 ---
 
 ## 🔄 Typical Data Consumption Flow
 
 1.  **Register data sources**: Configure MySQL / ClickHouse / Oracle connections in the admin console.
 2.  **Define resources**: Create `sys_resource_meta` entries via table mapping or SQL Lab.
-3.  **Authorize & publish**: Assign resource access to roles/users and issue API Keys.
-4.  **External calls**: Clients call `/api/v1/query` or direct resource endpoints with `X-API-Key`.
-5.  **Audit & trace**: All calls are logged in daily-sharded tables with Trace ID support.
+3.  **Publish to catalog**: Promote API resources as data products with domain, summary, owner, and other metadata.
+4.  **Discover & request access**: Users browse and filter the catalog; submit access requests when needed; approved users gain API access.
+5.  **External calls**: Clients call `/api/v1/query` or direct resource endpoints with `X-API-Key`.
+6.  **Audit & trace**: All calls are logged in daily-sharded tables with Trace ID support.
 
 See [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
 
@@ -113,7 +125,7 @@ See [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION
 ├── app/                  # Backend core (FastAPI)
 │   ├── api/              # API layer (v1 public API / portal admin)
 │   ├── core/             # Core config (middleware, DB, Redis)
-│   ├── services/         # Business logic (metadata, auth, AI, query engine)
+│   ├── services/         # Business logic (metadata, auth, AI, query engine, catalog)
 │   │   └── data_adapter/ # Multi-source adapters (MySQL / ClickHouse / Oracle)
 │   ├── utils/            # Utilities (shard routing, encryption)
 │   └── jobs/             # Scheduled jobs (stats aggregation, log cleanup)
@@ -240,7 +252,7 @@ This platform is the **data service layer** in the Yunshu AI stack, complementin
 
 | Platform | Role |
 |----------|------|
-| **API Data Platform** (this repo) | Data APIs, metadata governance, SQL Lab, audit & RBAC |
+| **API Data Platform** (this repo) | Data APIs, metadata governance, SQL Lab, data product catalog, asset panorama, audit & RBAC |
 | **AI Agent Platform** | AI chat, agent orchestration, ChatBI, knowledge base, MCP plugins |
 
 ---
