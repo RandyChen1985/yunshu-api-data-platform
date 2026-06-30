@@ -4,12 +4,10 @@ import { useRouter } from 'vue-router'
 import axios from '@/utils/axios'
 import { buildPlaygroundRoute } from '@/utils/playground'
 import { useToast } from '@/composables/useToast'
-import { useSimpleVirtualList } from '@/composables/useSimpleVirtualList'
 import CatalogProductRow from '@/components/catalog/CatalogProductRow.vue'
+import CatalogFeaturedCard from '@/components/catalog/CatalogFeaturedCard.vue'
 
 const { showToast } = useToast()
-const PRODUCT_ITEM_HEIGHT = 136
-const VIRTUAL_CONTAINER_HEIGHT = 560
 
 interface Product {
   id: number
@@ -52,6 +50,30 @@ const sortBy = ref('calls')
 const viewTab = ref<'all' | 'mine'>('all')
 const accessFilter = ref<'all' | 'yes' | 'no'>('all')
 const exporting = ref(false)
+const redundantCount = ref(0)
+
+const canManageCatalog = computed(() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('user_info') || '{}')
+    if (u.role === 'admin') return true
+    return (u.permissions?.elements || []).includes('element:catalog:manage')
+  } catch {
+    return false
+  }
+})
+
+const showRedundantBanner = computed(
+  () => redundantCount.value > 0 && (canManageCatalog.value || mineSummary.value.owned_products > 0),
+)
+
+const fetchRedundantCount = async () => {
+  try {
+    const res = await axios.get('/api/portal/catalog/products/redundant')
+    redundantCount.value = res.data.length
+  } catch {
+    redundantCount.value = 0
+  }
+}
 
 const isAdmin = computed(() => {
   try {
@@ -74,6 +96,10 @@ const canExport = computed(() => {
 })
 
 const showMineTab = computed(() => mineSummary.value.owned_products > 0 || isAdmin.value)
+
+const canAccessRequests = computed(
+  () => sessionStorage.getItem('catalog_can_access_requests') === '1',
+)
 
 const fetchData = async () => {
   loading.value = true
@@ -177,33 +203,24 @@ const goPage = (p: number) => {
   fetchData()
 }
 
-const {
-  onScroll: onProductScroll,
-  totalHeight: productListHeight,
-  visibleItems: visibleProducts,
-  offsetY: productListOffsetY,
-  useVirtual: useProductVirtual,
-  startIndex: _productVirtualStart,
-} = useSimpleVirtualList(products, {
-  itemHeight: PRODUCT_ITEM_HEIGHT,
-  containerHeight: VIRTUAL_CONTAINER_HEIGHT,
+onMounted(async () => {
+  await fetchData()
+  await fetchRedundantCount()
 })
-
-onMounted(fetchData)
 </script>
 
 <template>
-  <div class="space-y-6 max-w-7xl mx-auto">
+  <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">数据产品目录</h1>
+        <h1 class="text-lg sm:text-2xl font-bold text-gray-900">数据产品目录</h1>
         <p class="text-sm text-gray-500 mt-1">浏览、发现与试用已发布的数据 API 产品</p>
       </div>
       <div class="flex items-center gap-3">
         <button
           v-if="canExport"
           :disabled="exporting"
-          class="text-sm border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          class="hidden sm:inline-flex text-sm border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50"
           @click="exportCatalog"
         >
           {{ exporting ? '导出中...' : '导出清单' }}
@@ -215,6 +232,19 @@ onMounted(fetchData)
           查看资产全景 →
         </router-link>
       </div>
+    </div>
+
+    <div
+      v-if="showRedundantBanner"
+      class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+    >
+      <span>检测到 <strong>{{ redundantCount }}</strong> 个因 API 合并产生的冗余产品，建议清理以免目录重复展示。</span>
+      <router-link
+        to="/dashboard/catalog-redundant"
+        class="font-medium text-amber-800 hover:text-amber-950 whitespace-nowrap"
+      >
+        去清理 →
+      </router-link>
     </div>
 
     <!-- View tabs -->
@@ -238,7 +268,7 @@ onMounted(fetchData)
         </span>
       </button>
       <router-link
-        v-if="mineSummary.pending_review > 0"
+        v-if="canAccessRequests && mineSummary.pending_review > 0"
         to="/dashboard/catalog-requests"
         class="ml-auto text-sm text-amber-600 hover:text-amber-800 self-center"
       >
@@ -311,102 +341,49 @@ onMounted(fetchData)
     <!-- Featured sections -->
     <div v-if="showSections && !loading" class="space-y-6">
       <div v-if="sections.featured.length">
-        <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">⭐ 精选推荐</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div
+        <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">精选推荐</h2>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <CatalogFeaturedCard
             v-for="p in sections.featured.slice(0, 3)"
             :key="p.product_key"
-            class="bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 rounded-xl p-4 hover:shadow-md transition-shadow"
-          >
-            <div class="flex items-start justify-between cursor-pointer" @click="openDetail(p.product_key)">
-              <h3 class="font-bold text-gray-900">{{ p.display_name }}</h3>
-              <span v-if="p.has_access" class="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">已授权</span>
-            </div>
-            <p class="text-xs text-gray-500 mt-2 line-clamp-2 cursor-pointer" @click="openDetail(p.product_key)">{{ p.summary }}</p>
-            <div class="mt-3 flex items-center justify-between">
-              <div class="flex items-center gap-2 text-[10px] text-gray-400">
-                <span>{{ p.domain }}</span>
-                <span>·</span>
-                <span>{{ formatCalls(p.calls_7d) }} 次/周</span>
-              </div>
-              <router-link
-                v-if="p.has_access && playgroundRoute(p)"
-                :to="playgroundRoute(p)!"
-                class="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
-                @click.stop
-              >
-                试用 →
-              </router-link>
-            </div>
-          </div>
+            :product="p"
+            :playground-route="playgroundRoute(p)"
+            :format-calls="formatCalls(p.calls_7d)"
+            class="cursor-pointer"
+            @open="openDetail(p.product_key)"
+          />
         </div>
       </div>
     </div>
 
     <!-- Product list -->
     <div v-if="loading" class="text-center py-16 text-gray-400">加载中...</div>
-    <div v-else-if="products.length === 0" class="text-center py-16 text-gray-400">
+    <div v-else-if="products.length === 0" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100">
       <template v-if="viewTab === 'mine'">您暂未负责任何数据产品</template>
       <template v-else>暂无已发布的数据产品。管理员可在「接口管理」中发布资源到目录。</template>
     </div>
     <div v-else class="space-y-3">
-      <p class="text-sm text-gray-500">
-        共 {{ totalProducts }} 个产品
-        <span v-if="useProductVirtual" class="text-gray-400">（当前页虚拟滚动）</span>
-      </p>
+      <p class="text-sm text-gray-500">共 {{ totalProducts }} 个产品</p>
 
-      <!-- 虚拟滚动（当前页 ≥20 条时启用） -->
-      <div
-        v-if="useProductVirtual"
-        class="overflow-y-auto custom-scrollbar border border-gray-100 rounded-xl bg-gray-50/50"
-        :style="{ height: `${VIRTUAL_CONTAINER_HEIGHT}px` }"
-        @scroll="onProductScroll"
-      >
-        <div :style="{ height: `${productListHeight}px`, position: 'relative' }">
-          <div
-            :style="{ transform: `translateY(${productListOffsetY}px)` }"
-            class="space-y-3 px-1"
-          >
-            <div
-              v-for="p in visibleProducts"
-              :key="p.product_key"
-              class="bg-white rounded-xl border border-gray-100 p-5 hover:border-indigo-200 hover:shadow-sm transition-all"
-              :style="{ minHeight: `${PRODUCT_ITEM_HEIGHT - 12}px` }"
-            >
-              <CatalogProductRow
-                :product="p"
-                :view-tab="viewTab"
-                :status-label="statusLabel(p.status)"
-                :status-class="statusClass(p.status)"
-                :playground-route="playgroundRoute(p)"
-                :format-calls="formatCalls(p.calls_7d)"
-                @open="openDetail(p.product_key)"
-                @edit="router.push(`/dashboard/catalog/${p.product_key}/edit`)"
-              />
-            </div>
-          </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div
+          v-for="p in products"
+          :key="p.product_key"
+          class="bg-white rounded-xl border border-gray-100 p-5 hover:border-indigo-200 hover:shadow-sm transition-all h-full"
+        >
+          <CatalogProductRow
+            variant="card"
+            :product="p"
+            :view-tab="viewTab"
+            :status-label="statusLabel(p.status)"
+            :status-class="statusClass(p.status)"
+            :playground-route="playgroundRoute(p)"
+            :format-calls="formatCalls(p.calls_7d)"
+            @open="openDetail(p.product_key)"
+            @edit="router.push(`/dashboard/catalog/${p.product_key}/edit`)"
+          />
         </div>
       </div>
-
-      <!-- 普通列表 -->
-      <template v-else>
-      <div
-        v-for="p in products"
-        :key="p.product_key"
-        class="bg-white rounded-xl border border-gray-100 p-5 hover:border-indigo-200 hover:shadow-sm transition-all"
-      >
-        <CatalogProductRow
-          :product="p"
-          :view-tab="viewTab"
-          :status-label="statusLabel(p.status)"
-          :status-class="statusClass(p.status)"
-          :playground-route="playgroundRoute(p)"
-          :format-calls="formatCalls(p.calls_7d)"
-          @open="openDetail(p.product_key)"
-          @edit="router.push(`/dashboard/catalog/${p.product_key}/edit`)"
-        />
-      </div>
-      </template>
       <div v-if="totalPages > 1" class="flex items-center justify-center gap-3 pt-4">
         <button
           :disabled="page <= 1"

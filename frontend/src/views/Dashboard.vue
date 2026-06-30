@@ -4,12 +4,14 @@ import { computed, ref, onMounted, watch, provide } from 'vue'
 import axios from '../utils/axios'
 import Toast from '../components/Toast.vue'
 import MyPermissionsModal from '../components/MyPermissionsModal.vue'
+import { useMobileLayout } from '../composables/useMobileLayout'
 
 const router = useRouter()
 const route = useRoute()
 const appVersion = import.meta.env.VITE_APP_VERSION || 'Dev Build'
 const repoUrl = 'https://github.com/RandyChen1985/yunshu-api-data-platform'
 const isCollapsed = ref(false)
+const { isMobile, showMobileSidebar, toggleMobileSidebar, closeMobileSidebar } = useMobileLayout()
 const showLogoutDialog = ref(false)
 const showUserInfoDialog = ref(false)
 const userApiKey = ref('')
@@ -205,6 +207,9 @@ onMounted(() => {
 
 watch(() => route.path, () => {
   fetchCatalogBadge()
+  if (isMobile.value) {
+    closeMobileSidebar()
+  }
 })
 
 const openOnlineUsers = () => {
@@ -251,8 +256,12 @@ const cancelLogout = () => {
 }
 
 const openUserInfo = async () => {
+  if (isMobile.value) {
+    closeMobileSidebar()
+    router.push('/dashboard/personal')
+    return
+  }
   showUserInfoDialog.value = true
-  // 加载 API Key
   if (!userApiKey.value && userInfo.value.id) {
     await fetchApiKey()
   }
@@ -318,6 +327,10 @@ const breadcrumbs = computed(() => {
 })
 
 const toggleSidebar = () => {
+  if (isMobile.value) {
+    toggleMobileSidebar()
+    return
+  }
   isCollapsed.value = !isCollapsed.value
 }
 
@@ -337,6 +350,9 @@ interface MenuItem {
   perm: string;
   activeNames?: string[];
   badge?: number;
+  desktopOnly?: boolean;
+  mobileOnly?: boolean;
+  mobileVisible?: boolean;
 }
 
 interface MenuGroup {
@@ -355,26 +371,27 @@ const menuGroups: MenuGroup[] = [
   {
     title: '数据服务',
     items: [
-      { name: '产品目录', to: '/dashboard/catalog', icon: 'catalog', perm: '', activeNames: ['Catalog', 'CatalogDetail', 'CatalogProductEdit'] },
-      { name: '资产全景', to: '/dashboard/asset-panorama', icon: 'panorama', perm: 'menu:asset-panorama', activeNames: ['AssetPanorama'] },
-      { name: '权限申请', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', activeNames: ['CatalogAccessRequests'] }
+      { name: '产品目录', to: '/dashboard/catalog', icon: 'catalog', perm: '', mobileVisible: true, activeNames: ['Catalog', 'CatalogDetail', 'CatalogProductEdit'] },
+      { name: '我的申请', to: '/dashboard/catalog-my-applications', icon: 'catalog', perm: '', mobileVisible: true, activeNames: ['CatalogMyApplications'] },
+      { name: '资产全景', to: '/dashboard/asset-panorama', icon: 'panorama', perm: 'menu:asset-panorama', desktopOnly: true, activeNames: ['AssetPanorama'] },
+      { name: '权限审批', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', mobileVisible: true, activeNames: ['CatalogAccessRequests'] }
     ]
   },
   {
     title: '数据开发',
     items: [
-      { name: '接口管理', to: '/dashboard/resources', icon: 'resources', perm: 'menu:resources' },
-      { name: 'SQL 实验室', to: '/dashboard/lab', icon: 'lab', perm: 'menu:lab', activeNames: ['SQLLab'] },
-      { name: '元数据中心', to: '/dashboard/metadata', icon: 'metadata', perm: 'menu:metadata' },
-      { name: '数据源管理', to: '/dashboard/datasources', icon: 'datasource', perm: 'menu:datasource', activeNames: ['DataSourceList', 'DataSourceEdit', 'DataSourceNew'] },
-      { name: '审计日志', to: '/dashboard/audit', icon: 'audit', perm: 'menu:audit', activeNames: ['Audit'] }
+      { name: '接口管理', to: '/dashboard/resources', icon: 'resources', perm: 'menu:resources', desktopOnly: true },
+      { name: 'SQL 实验室', to: '/dashboard/lab', icon: 'lab', perm: 'menu:lab', activeNames: ['SQLLab'], desktopOnly: true },
+      { name: '元数据中心', to: '/dashboard/metadata', icon: 'metadata', perm: 'menu:metadata', desktopOnly: true },
+      { name: '数据源管理', to: '/dashboard/datasources', icon: 'datasource', perm: 'menu:datasource', activeNames: ['DataSourceList', 'DataSourceEdit', 'DataSourceNew'], desktopOnly: true },
+      { name: '审计日志', to: '/dashboard/audit', icon: 'audit', perm: 'menu:audit', activeNames: ['Audit'], desktopOnly: true }
     ]
   },
   {
     title: '调试中心',
     items: [
-      { name: 'API 调试', to: '/dashboard/playground', icon: 'playground', perm: 'menu:playground', activeNames: ['Playground'] },
-      { name: '开发者中心', to: '/dashboard/developer', icon: 'developer', perm: '', activeNames: ['DeveloperPortal'] }
+      { name: 'API 调试', to: '/dashboard/playground', icon: 'playground', perm: 'menu:playground', activeNames: ['Playground'], desktopOnly: true },
+      { name: '开发者中心', to: '/dashboard/developer', icon: 'developer', perm: '', activeNames: ['DeveloperPortal'], desktopOnly: true }
     ]
   },
   {
@@ -383,6 +400,12 @@ const menuGroups: MenuGroup[] = [
       { name: '用户管理', to: '/dashboard/users', icon: 'users', perm: 'menu:users', activeNames: ['Users'] },
       { name: '角色管理', to: '/dashboard/roles', icon: 'roles', perm: 'menu:system:roles', activeNames: ['Roles'] },
       { name: '系统设置', to: '/dashboard/settings', icon: 'config', perm: 'menu:config', activeNames: ['SystemSettings'] }
+    ]
+  },
+  {
+    title: '',
+    items: [
+      { name: '个人中心', to: '/dashboard/personal', icon: 'personal', perm: '', activeNames: ['PersonalCenter'], mobileOnly: true }
     ]
   }
 ];
@@ -394,10 +417,20 @@ const isItemActive = (item: MenuItem) => {
   if (item.to === '/dashboard/metadata' && route.path.startsWith('/dashboard/metadata')) return true;
   if (item.to === '/dashboard/resources' && route.path.startsWith('/dashboard/resources')) return true;
   if (item.to === '/dashboard/catalog') {
-    return route.path === '/dashboard/catalog' || route.path.startsWith('/dashboard/catalog/')
+    return route.path === '/dashboard/catalog' || /^\/dashboard\/catalog\/[^/]+/.test(route.path)
   }
   return false;
 };
+
+const currentPageTitle = computed(() => {
+  for (const group of menuGroups) {
+    for (const item of group.items) {
+      if (isItemActive(item)) return item.name
+    }
+  }
+  if (route.name === 'PersonalCenter') return '个人中心'
+  return '云枢数据'
+})
 
 const collapsedMenuGroups = ref<Record<string, boolean>>({});
 
@@ -422,9 +455,15 @@ const filteredMenuGroups = computed(() => {
     items: group.items
       .filter(item => {
         if (item.to === '/dashboard/catalog-requests') {
-          return hasMenuPerm(item.perm) || catalogBadge.value.can_access_requests
+          return catalogBadge.value.can_access_requests
         }
-        return hasMenuPerm(item.perm)
+        if (isMobile.value && item.mobileVisible) {
+          return true
+        }
+        if (!hasMenuPerm(item.perm)) return false
+        if (item.desktopOnly && isMobile.value) return false
+        if (item.mobileOnly && !isMobile.value) return false
+        return true
       })
       .map(item => ({
         ...item,
@@ -437,20 +476,32 @@ const filteredMenuGroups = computed(() => {
 </script>
 
 <template>
-  <div class="h-screen bg-gray-50 flex overflow-hidden">
+  <div class="h-screen bg-gray-50 flex overflow-hidden relative">
+    <!-- Mobile Overlay -->
+    <div
+      v-if="isMobile && showMobileSidebar"
+      class="fixed inset-0 bg-black/50 z-20 transition-opacity backdrop-blur-sm"
+      @click="closeMobileSidebar"
+    />
+
     <!-- Sidebar -->
     <aside 
        class="bg-sidebar text-white shadow-xl flex flex-col z-30 transition-all duration-300 ease-in-out flex-shrink-0"
-       :class="isCollapsed ? 'w-20' : 'w-[220px]'"
+       :class="[
+         isMobile ? 'fixed inset-y-0 left-0 h-full' : 'relative',
+         isMobile
+           ? (showMobileSidebar ? 'translate-x-0 w-[220px]' : '-translate-x-full w-[220px]')
+           : (isCollapsed ? 'w-20' : 'w-[220px]'),
+       ]"
     >
       <!-- Brand Header -->
       <div 
          class="h-16 flex items-center bg-sidebar border-b border-gray-700 overflow-hidden whitespace-nowrap"
-         :class="isCollapsed ? 'justify-center px-0' : 'px-4'"
+         :class="isCollapsed && !isMobile ? 'justify-center px-0' : 'px-4'"
       >
         <img src="/favicon.png?v=20260629-2" class="w-8 h-8 flex-shrink-0 rounded-lg" alt="Logo" />
         <transition name="fade">
-          <div v-if="!isCollapsed" class="ml-2.5 flex flex-col justify-center -translate-y-0.5">
+          <div v-if="!isCollapsed || isMobile" class="ml-2.5 flex flex-col justify-center -translate-y-0.5">
             <span class="text-[15px] font-bold tracking-wide leading-tight">云枢 · 数据服务平台</span>
             <component
               :is="repoUrl ? 'a' : 'span'"
@@ -471,11 +522,14 @@ const filteredMenuGroups = computed(() => {
       </div>
 
       <!-- Navigation (Scrollable internally) -->
-      <nav class="flex-1 py-4 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar">
+      <nav
+        class="flex-1 py-4 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar"
+        @click="isMobile ? closeMobileSidebar() : null"
+      >
         <div v-for="group in filteredMenuGroups" :key="group.title" class="space-y-1">
           <!-- Group Title (Hierarchy Name) -->
           <button 
-            v-if="!isCollapsed && group.title" 
+            v-if="(!isCollapsed || isMobile) && group.title" 
             type="button"
             class="py-2 flex items-center justify-between gap-2 text-left text-[10px] font-black text-gray-500 uppercase tracking-[0.15em] select-none hover:text-gray-300 transition-colors"
             :class="isCollapsed ? 'w-full justify-center px-0 mx-0' : 'w-[calc(100%-1.5rem)] mx-3 px-3'"
@@ -507,8 +561,9 @@ const filteredMenuGroups = computed(() => {
                   isItemActive(item)
                     ? 'bg-primary text-white shadow-md'
                     : 'text-gray-300 hover:bg-gray-800 hover:text-white',
-                  isCollapsed ? 'justify-center px-0 mx-0 rounded-none' : 'px-4 mx-3 rounded-xl',
+                  isCollapsed && !isMobile ? 'justify-center px-0 mx-0 rounded-none' : 'px-4 mx-3 rounded-xl',
                 ]"
+                @click="isMobile ? closeMobileSidebar() : null"
               >
             <!-- Icons (保持原有 SVG) -->
             <svg v-if="item.icon === 'dashboard'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
@@ -523,9 +578,10 @@ const filteredMenuGroups = computed(() => {
             <svg v-else-if="item.icon === 'catalog'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             <svg v-else-if="item.icon === 'panorama'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
             <svg v-else-if="item.icon === 'config'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            <svg v-else-if="item.icon === 'personal'" class="flex-shrink-0 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
 
                 <transition name="fade">
-                  <span v-if="!isCollapsed" class="ml-3 flex-1 flex items-center justify-between gap-2 min-w-0">
+                  <span v-if="!isCollapsed || isMobile" class="ml-3 flex-1 flex items-center justify-between gap-2 min-w-0">
                     <span class="truncate">{{ item.name }}</span>
                     <span
                       v-if="item.badge && item.badge > 0"
@@ -545,20 +601,20 @@ const filteredMenuGroups = computed(() => {
       <button 
          @click="openUserInfo"
          class="py-4 bg-sidebar border-t border-gray-700 flex items-center overflow-hidden whitespace-nowrap hover:bg-gray-800 transition-colors w-full text-left focus:outline-none focus:ring-2 focus:ring-primary"
-         :class="isCollapsed ? 'justify-center px-0' : 'px-4'"
+         :class="isCollapsed && !isMobile ? 'justify-center px-0' : 'px-4'"
          title="查看个人信息"
       >
          <div class="h-8 w-8 rounded-full bg-gray-500 flex flex-shrink-0 items-center justify-center text-xs font-bold text-white uppercase">
             {{ userInfo.user_name ? userInfo.user_name.substring(0, 2) : 'USER' }}
          </div>
          <transition name="fade">
-             <div v-if="!isCollapsed" class="ml-3 flex-1">
+             <div v-if="!isCollapsed || isMobile" class="ml-3 flex-1">
                 <p class="text-sm font-medium text-white">{{ userInfo.user_name || 'Loading...' }}</p>
                 <p class="text-xs text-gray-400">{{ userInfo.role === 'admin' ? '管理员' : '普通用户' }}</p>
              </div>
          </transition>
          <transition name="fade">
-            <svg v-if="!isCollapsed" class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg v-if="!isCollapsed && !isMobile" class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
          </transition>
@@ -569,21 +625,26 @@ const filteredMenuGroups = computed(() => {
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
       <!-- Top Header -->
       <header class="bg-white shadow-sm h-16 flex justify-between items-center px-4 sm:px-6 lg:px-8 z-10 border-b border-gray-200 flex-shrink-0">
-         <div class="flex items-center">
+         <div class="flex items-center min-w-0 flex-1">
             <!-- Sidebar Toggle Button -->
             <button 
                @click="toggleSidebar"
-               class="mr-4 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary rounded-md p-1"
+               class="mr-3 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary rounded-md p-1 shrink-0"
                title="Toggle Sidebar"
             >
                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                   <path v-if="!isCollapsed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                   <path v-if="!isMobile && !isCollapsed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
                    <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                </svg>
             </button>
 
+            <!-- Mobile Title -->
+            <div v-if="isMobile" class="min-w-0 flex-1">
+              <h1 class="text-sm font-bold text-gray-900 truncate">{{ currentPageTitle }}</h1>
+            </div>
+
             <!-- Breadcrumbs -->
-            <nav class="flex" aria-label="Breadcrumb">
+            <nav v-else class="hidden md:flex" aria-label="Breadcrumb">
               <ol class="flex items-center space-x-2">
                 <li>
                    <span class="text-gray-400 hover:text-gray-500">
@@ -602,68 +663,67 @@ const filteredMenuGroups = computed(() => {
             </nav>
          </div>
 
-         <div class="flex items-center space-x-4">
+         <div class="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
            <!-- Refined Status Capsule -->
-           <div class="flex items-center bg-white/80 backdrop-blur-sm border border-gray-100 rounded-full px-1.5 py-1 shadow-sm hover:shadow-md transition-all duration-300">
+           <div class="flex items-center bg-white/80 backdrop-blur-sm border border-gray-100 rounded-full px-0.5 sm:px-1 py-0.5 sm:py-1 shadow-sm hover:shadow-md transition-all duration-300">
              <!-- My Permissions -->
              <button 
                 @click="openPermissionsModal"
-                class="flex items-center px-3 py-1.5 rounded-full hover:bg-indigo-50 transition-all group focus:outline-none"
+                class="flex items-center px-1 sm:px-3 py-1 sm:py-1.5 rounded-full hover:bg-indigo-50 transition-all group focus:outline-none"
                 title="查看我的资源权限"
               >
-                <div class="p-1 bg-indigo-100 rounded-lg mr-2 group-hover:rotate-12 transition-transform duration-300">
-                  <svg class="h-4 w-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="p-0.5 sm:p-1 bg-indigo-100 rounded-md sm:rounded-lg sm:mr-2 group-hover:rotate-12 transition-transform duration-300">
+                  <svg class="h-3 w-3 sm:h-4 sm:w-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 14l-1 1-1 1H3m9-9a6 6 0 019 9h9v1.8c0 .249-.088.485-.246.663l-4 4.062C8.6 20.2 8.3 20.3 8 20.5l-5-5-5-5L15 7z" />
                   </svg>
                 </div>
-                <span class="text-xs font-bold text-gray-600 group-hover:text-indigo-700">我的权限</span>
-                <span class="ml-1.5 px-1.5 py-0.5 bg-indigo-600 text-[10px] font-black text-white rounded-full leading-none">{{ myResources.length }}</span>
+                <span class="hidden sm:inline text-xs font-bold text-gray-600 group-hover:text-indigo-700">我的权限</span>
+                <span class="ml-0.5 sm:ml-1.5 px-1 sm:px-1.5 py-px sm:py-0.5 bg-indigo-600 text-[9px] sm:text-[10px] font-black text-white rounded-full leading-none min-w-[16px] text-center">{{ myResources.length }}</span>
               </button>
 
-             <div class="w-px h-4 bg-gray-200 mx-1"></div>
+             <div class="hidden sm:block w-px h-4 bg-gray-200 mx-1"></div>
 
              <!-- Online Users -->
              <div 
                 @click="openOnlineUsers"
                 :class="[
-                  'flex items-center px-3 py-1.5 group custom-tooltip transition-colors',
+                  'flex items-center px-1 sm:px-3 py-1 sm:py-1.5 group custom-tooltip transition-colors',
                   userInfo.role === 'admin' ? 'cursor-pointer hover:bg-green-50 rounded-lg' : 'cursor-default'
                 ]"
                 :data-tooltip="userInfo.role === 'admin' ? '点击查看在线用户详情' : '当前在线用户 (Web 登录用户 + API 调用用户)'"
              >
-                <div class="relative flex h-2 w-2 mr-2.5">
+                <div class="relative flex h-1.5 w-1.5 sm:h-2 sm:w-2 sm:mr-2.5">
                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  <span class="relative inline-flex rounded-full h-full w-full bg-green-500"></span>
                 </div>
-                <span class="text-sm font-black text-gray-700 tabular-nums">{{ onlineUserCount }}</span>
-                <span class="text-[11px] font-bold text-gray-400 ml-1.5 group-hover:text-green-600 transition-colors">在线</span>
+                <span class="text-xs sm:text-sm font-bold sm:font-black text-gray-700 tabular-nums">{{ onlineUserCount }}</span>
+                <span class="hidden sm:inline text-[11px] font-bold text-gray-400 ml-1.5 group-hover:text-green-600 transition-colors">在线</span>
              </div>
            </div>
 
-          <div class="h-6 w-px bg-gray-200 mx-2" aria-hidden="true"></div>
+          <div class="hidden sm:block h-6 w-px bg-gray-200 mx-2" aria-hidden="true"></div>
           <button 
              @click="logout" 
-             class="flex items-center px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 group"
+             class="flex items-center px-2 sm:px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 group"
           >
-             <svg class="h-4 w-4 mr-1.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <svg class="h-4 w-4 sm:mr-1.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
              </svg>
-             退出
+             <span class="hidden sm:inline">退出</span>
           </button>
         </div>
       </header>
 
       <!-- Main Scrollable Content -->
-      <main class="flex-1 overflow-y-auto bg-gray-100 p-8 custom-scrollbar">
-        <div
+      <main class="flex-1 overflow-y-auto bg-gray-100 p-4 sm:p-6 lg:p-8 custom-scrollbar">
+        <router-link
           v-if="catalogBadge.count > 0 && catalogBadge.can_access_requests"
-          class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          to="/dashboard/catalog-requests"
+          class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100/80 transition-colors"
         >
           <span>您有 <strong>{{ catalogBadge.count }}</strong> 条目录权限申请待审批</span>
-          <router-link to="/dashboard/catalog-requests" class="font-medium text-amber-800 hover:text-amber-950 whitespace-nowrap">
-            立即处理 →
-          </router-link>
-        </div>
+          <span class="font-medium text-amber-800 whitespace-nowrap">立即处理 →</span>
+        </router-link>
         <router-view v-slot="{ Component }">
            <transition name="page" mode="out-in">
               <component :is="Component" :key="$route.fullPath" />

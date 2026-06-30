@@ -157,6 +157,26 @@ async def test_catalog_pending_count_extended(client: AsyncClient, admin_headers
 
 
 @pytest.mark.asyncio
+async def test_catalog_access_request_status_counts(client: AsyncClient, admin_headers: dict):
+    response = await client.get("/api/portal/catalog/access-requests/status-counts", headers=admin_headers)
+    assert response.status_code == 200
+    data = response.json()
+    for key in ("0", "1", "2", "3", "all"):
+        assert key in data
+        assert isinstance(data[key], int)
+
+
+@pytest.mark.asyncio
+async def test_catalog_my_access_request_status_counts(client: AsyncClient, admin_headers: dict):
+    response = await client.get("/api/portal/catalog/access-requests/mine/status-counts", headers=admin_headers)
+    assert response.status_code == 200
+    data = response.json()
+    for key in ("0", "1", "2", "3", "all"):
+        assert key in data
+        assert isinstance(data[key], int)
+
+
+@pytest.mark.asyncio
 async def test_catalog_batch_assign_owner(client: AsyncClient, admin_headers: dict):
     products = await client.get(
         "/api/portal/catalog/products?include_draft=true",
@@ -289,3 +309,81 @@ async def test_catalog_update_product_resources(client: AsyncClient, admin_heade
         json={"resources": payload},
     )
     assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_catalog_my_access_requests(client: AsyncClient, admin_headers: dict):
+    response = await client.get("/api/portal/catalog/access-requests/mine", headers=admin_headers)
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_catalog_redundant_products_list(client: AsyncClient, admin_headers: dict):
+    response = await client.get("/api/portal/catalog/products/redundant", headers=admin_headers)
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_catalog_resource_conflicts(client: AsyncClient, admin_headers: dict):
+    products = await client.get(
+        "/api/portal/catalog/products?include_draft=true",
+        headers=admin_headers,
+    )
+    items = _catalog_items(products.json())
+    if not items:
+        pytest.skip("无目录产品")
+    key = items[0]["product_key"]
+    detail = await client.get(f"/api/portal/catalog/products/{key}", headers=admin_headers)
+    resources = detail.json().get("resources") or []
+    if not resources:
+        pytest.skip("产品无关联资源")
+    keys = ",".join(r["resource_key"] for r in resources)
+    response = await client.get(
+        f"/api/portal/catalog/products/{key}/resource-conflicts",
+        headers=admin_headers,
+        params={"keys": keys},
+    )
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_catalog_sync_access_after_approve(client: AsyncClient, admin_headers: dict):
+    products = await client.get("/api/portal/catalog/products", headers=admin_headers)
+    items = _catalog_items(products.json())
+    if not items:
+        pytest.skip("无已发布产品")
+    key = items[0]["product_key"]
+    if items[0].get("has_access"):
+        pytest.skip("管理员已有权限")
+    create = await client.post(
+        f"/api/portal/catalog/products/{key}/access-request",
+        headers=admin_headers,
+        json={"message": "sync test"},
+    )
+    if create.status_code not in (200, 400):
+        pytest.skip("无法创建申请")
+    pending = await client.get(
+        "/api/portal/catalog/access-requests",
+        headers=admin_headers,
+        params={"status": 0},
+    )
+    req = next((r for r in pending.json() if r.get("product_key") == key), None)
+    if not req:
+        pytest.skip("无待审批申请")
+    approve = await client.post(
+        f"/api/portal/catalog/access-requests/{req['id']}/approve",
+        headers=admin_headers,
+        json={},
+    )
+    assert approve.status_code == 200
+    sync = await client.post(
+        f"/api/portal/catalog/products/{key}/sync-access",
+        headers=admin_headers,
+    )
+    assert sync.status_code == 200
+    body = sync.json()
+    assert "has_access" in body
+    assert body.get("required_count", 0) >= 1

@@ -10,7 +10,15 @@ const { showToast } = useToast()
 const refreshCatalogBadge = inject<(() => Promise<void>) | undefined>('refreshCatalogBadge')
 const loading = ref(true)
 const requests = ref<any[]>([])
+const statusCounts = ref<Record<string, number>>({ '0': 0, '1': 0, '2': 0, '3': 0, all: 0 })
 const statusFilter = ref<number | ''>(0)
+const statusOptions = [
+  { v: 0, l: '待审批' },
+  { v: 1, l: '已通过' },
+  { v: 2, l: '已拒绝' },
+  { v: 3, l: '权限已收回' },
+  { v: '' as const, l: '全部' },
+]
 const remark = ref('')
 const handlingId = ref<number | null>(null)
 const currentUserId = ref<number | null>(null)
@@ -88,8 +96,7 @@ const doRevokeAccess = async (id: number) => {
   try {
     await axios.post(`/api/portal/catalog/access-requests/${id}/revoke-access`)
     showToast('已收回访问权限', 'success')
-    await fetchRequests()
-    await refreshCatalogBadge?.()
+    await refreshAll()
   } catch (e: any) {
     showToast(apiErrorMessage(e, '收回权限失败'), 'error')
   } finally {
@@ -107,13 +114,30 @@ const revokeAccess = (id: number, userName: string) => {
   })
 }
 
+const fetchStatusCounts = async () => {
+  try {
+    const res = await axios.get('/api/portal/catalog/access-requests/status-counts')
+    statusCounts.value = res.data
+  } catch {
+    statusCounts.value = { '0': 0, '1': 0, '2': 0, '3': 0, all: 0 }
+  }
+}
+
+const tabCount = (v: number | '') => {
+  if (v === '') return statusCounts.value.all ?? 0
+  return statusCounts.value[String(v)] ?? 0
+}
+
+const refreshAll = async () => {
+  await Promise.all([fetchRequests(), fetchStatusCounts()])
+  await refreshCatalogBadge?.()
+}
+
 const fetchRequests = async () => {
   loading.value = true
   try {
-    const params: Record<string, number> = {}
-    if (statusFilter.value !== '') {
-      params.status = statusFilter.value as number
-    }
+    const params: Record<string, unknown> = {}
+    if (statusFilter.value !== '') params.status = statusFilter.value
     const res = await axios.get('/api/portal/catalog/access-requests', { params })
     requests.value = res.data
   } catch (e: any) {
@@ -131,8 +155,7 @@ const approve = async (id: number) => {
     await axios.post(`/api/portal/catalog/access-requests/${id}/approve`, { remark: remark.value || undefined })
     remark.value = ''
     showToast('已通过申请', 'success')
-    await fetchRequests()
-    await refreshCatalogBadge?.()
+    await refreshAll()
   } catch (e: any) {
     showToast(apiErrorMessage(e, '审批失败'), 'error')
   } finally {
@@ -146,8 +169,7 @@ const doReject = async (id: number) => {
     await axios.post(`/api/portal/catalog/access-requests/${id}/reject`, { remark: remark.value || undefined })
     remark.value = ''
     showToast('已拒绝申请', 'success')
-    await fetchRequests()
-    await refreshCatalogBadge?.()
+    await refreshAll()
   } catch (e: any) {
     showToast(apiErrorMessage(e, '操作失败'), 'error')
   } finally {
@@ -186,28 +208,39 @@ onMounted(() => {
     const u = JSON.parse(localStorage.getItem('user_info') || '{}')
     currentUserId.value = u.user_id ?? null
   } catch { /* ignore */ }
+  fetchStatusCounts()
   fetchRequests()
 })
 </script>
 
 <template>
-  <div class="space-y-6 max-w-7xl mx-auto">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">目录权限申请</h1>
-        <p class="text-sm text-gray-500 mt-1">审批业务方对数据产品的 API 访问申请</p>
-      </div>
-      <select v-model="statusFilter" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" @change="fetchRequests">
-        <option :value="0">待审批</option>
-        <option :value="1">已通过</option>
-        <option :value="2">已拒绝</option>
-        <option :value="3">权限已收回</option>
-        <option value="">全部</option>
-      </select>
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-lg sm:text-2xl font-bold text-gray-900">目录权限审批</h1>
+      <p class="text-sm text-gray-500 mt-1">审批业务方对数据产品的 API 访问申请（管理员与产品负责人）</p>
+    </div>
+
+    <div class="flex flex-wrap gap-2">
+      <button
+        v-for="opt in statusOptions"
+        :key="String(opt.v)"
+        :class="statusFilter === opt.v ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'"
+        class="px-3 py-1.5 rounded-lg text-sm font-medium inline-flex items-center gap-1.5"
+        @click="statusFilter = opt.v; fetchRequests()"
+      >
+        {{ opt.l }}
+        <span
+          v-if="tabCount(opt.v) > 0"
+          :class="statusFilter === opt.v ? 'bg-indigo-200 text-indigo-800' : 'bg-gray-200 text-gray-600'"
+          class="text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold"
+        >
+          {{ tabCount(opt.v) }}
+        </span>
+      </button>
     </div>
 
     <div v-if="loading" class="text-center py-20 text-gray-400">加载中...</div>
-    <div v-else-if="!requests.length" class="text-center py-20 text-gray-400 bg-white rounded-xl border">
+    <div v-else-if="!requests.length" class="text-center py-20 text-gray-400 bg-white rounded-xl border border-gray-100">
       暂无申请记录
     </div>
     <div v-else class="space-y-4">
@@ -226,7 +259,7 @@ onMounted(() => {
               {{ req.created_at }}
               <router-link
                 :to="`/dashboard/users?user_id=${req.user_id}`"
-                class="ml-3 text-indigo-600 hover:text-indigo-800 text-xs"
+                class="hidden sm:inline ml-3 text-indigo-600 hover:text-indigo-800 text-xs"
               >
                 查看用户权限 →
               </router-link>
@@ -244,7 +277,7 @@ onMounted(() => {
               该用户当前已无此产品的 API 访问权限，可重新发起申请。
             </p>
           </div>
-          <div v-if="canHandleRequest(req)" class="flex flex-col gap-2 min-w-[200px]">
+          <div v-if="canHandleRequest(req)" class="flex flex-col gap-2 w-full sm:min-w-[200px] sm:max-w-xs">
             <input v-model="remark" placeholder="审批备注（可选）" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
             <div class="flex gap-2">
               <button

@@ -230,10 +230,18 @@ const handleLogin = async () => {
     </div>
 
     <!-- Right: Login Form -->
-    <div class="w-full lg:flex-[4] flex items-center justify-center bg-gray-50 p-8 sm:p-12 relative z-10">
+    <div class="w-full lg:flex-[4] flex items-center justify-center bg-gray-50 p-6 sm:p-12 relative z-10">
       <div class="w-full max-w-sm space-y-8">
         <div class="text-center">
-          <div class="flex justify-center mb-4">
+          <div class="lg:hidden flex flex-col items-center mb-6">
+            <img
+              src="/favicon.png?v=20260629-2"
+              alt="云枢数据服务平台"
+              class="w-14 h-14 rounded-2xl shadow-md object-cover mb-3"
+            />
+            <h1 class="text-lg font-bold text-gray-900">云枢 · 数据服务平台</h1>
+          </div>
+          <div class="hidden lg:flex justify-center mb-4">
              <!-- Logo or Icon Animation -->
              <img
                src="/favicon.png?v=20260629-2"
@@ -241,7 +249,7 @@ const handleLogin = async () => {
                class="w-20 h-20 rounded-2xl shadow-lg object-cover"
              />
           </div>
-          <h2 class="text-3xl font-extrabold text-gray-900">
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-gray-900">
             欢迎回来
           </h2>
           <p class="mt-2 text-sm text-gray-600">

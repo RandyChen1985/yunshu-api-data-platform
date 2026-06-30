@@ -25,6 +25,9 @@ from app.schemas.catalog import (
     CatalogSettingsResponse,
     CatalogSettingsUpdate,
     ProductResourcesUpdate,
+    RedundantProductItem,
+    ArchiveRedundantResult,
+    SyncAccessResult,
 )
 from app.services.catalog_service import CatalogService, STATUS_DRAFT, REQUEST_PENDING
 from app.api.portal.endpoints.dashboard import is_admin
@@ -187,6 +190,12 @@ async def batch_assign_owner(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/products/redundant", response_model=List[RedundantProductItem])
+async def list_redundant_products(user: dict = Depends(require_api_key)):
+    """列出因 API 合并产生的冗余产品（主产品外仍单独存在的产品记录）"""
+    return await CatalogService.list_redundant_products(user)
+
+
 @router.get("/products/{product_key}/edit-meta")
 async def get_product_edit_meta(product_key: str, user: dict = Depends(require_api_key)):
     try:
@@ -331,6 +340,52 @@ async def unpublish_product(
     return {"success": True}
 
 
+@router.get("/products/{product_key}/resource-conflicts", response_model=List[RedundantProductItem])
+async def check_resource_conflicts(
+    product_key: str,
+    keys: str = Query(..., description="逗号分隔的 resource_key"),
+    user: dict = Depends(require_api_key),
+):
+    if not await CatalogService.can_edit_product(user, product_key):
+        raise HTTPException(status_code=403, detail="无编辑权限")
+    resource_keys = [k.strip() for k in keys.split(",") if k.strip()]
+    return await CatalogService.check_resource_conflicts(
+        resource_keys, host_product_key=product_key
+    )
+
+
+@router.post("/products/{product_key}/archive-redundant", response_model=ArchiveRedundantResult)
+async def archive_redundant_product(
+    request_in: Request,
+    product_key: str,
+    body: UnpublishRequest = Body(default=UnpublishRequest()),
+    user: dict = Depends(require_api_key),
+):
+    request_in.state.action_type = "CATALOG_PRODUCT_ARCHIVE"
+    try:
+        return await CatalogService.archive_redundant_product(
+            user, product_key, revoke_permissions=body.revoke_permissions
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/products/{product_key}/sync-access", response_model=SyncAccessResult)
+async def sync_product_access(
+    request_in: Request,
+    product_key: str,
+    user: dict = Depends(require_api_key),
+):
+    """已通过审批后补同步 API 资源权限（写入 sys_user_resources 并刷新缓存）"""
+    request_in.state.action_type = "CATALOG_ACCESS_SYNC"
+    try:
+        return await CatalogService.sync_user_product_access(user, product_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/products/{product_key}/access-request")
 async def create_access_request(
     request_in: Request,
@@ -343,6 +398,21 @@ async def create_access_request(
         return await CatalogService.create_access_request(user, product_key, body.message)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/access-requests/mine", response_model=List[AccessRequestItem])
+async def list_my_access_requests(
+    status: Optional[int] = Query(None, description="0待审批 1已通过 2已拒绝 3已收回"),
+    user: dict = Depends(require_api_key),
+):
+    """当前用户提交的目录权限申请"""
+    return await CatalogService.list_my_access_requests(user, status=status)
+
+
+@router.get("/access-requests/mine/status-counts")
+async def my_access_request_status_counts(user: dict = Depends(require_api_key)):
+    """我的申请页各 Tab 数量统计"""
+    return await CatalogService.count_my_access_requests_by_status(user)
 
 
 @router.get("/access-requests", response_model=List[AccessRequestItem])
@@ -366,6 +436,17 @@ async def pending_request_count(user: dict = Depends(require_api_key)):
         "show_requests_menu": can_access,
         "can_access_requests": can_access,
     }
+
+
+@router.get("/access-requests/status-counts")
+async def access_request_status_counts(user: dict = Depends(require_api_key)):
+    """审批页各 Tab 数量统计"""
+    summary = await CatalogService.get_mine_summary(user)
+    if not CatalogService.can_access_catalog_requests(
+        user, owned_products=summary["owned_products"]
+    ):
+        raise HTTPException(status_code=403, detail="无权查看权限审批")
+    return await CatalogService.count_access_requests_by_status(user)
 
 
 @router.post("/access-requests/{request_id}/approve")
