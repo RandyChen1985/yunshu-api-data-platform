@@ -60,6 +60,7 @@
 | `/api/portal/catalog/products/batch-publish` | `test_catalog.py` | 批量上架、跳过不合规草稿并返回报告 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products/{key}/edit-meta` | `test_catalog.py` | 产品编辑元数据、负责人/数据集下拉 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/access-requests` | `test_catalog.py` | 权限申请列表、审批筛选 | ✅ 通过 | 2026-06-29 |
+| `/api/portal/catalog/access-requests/status-counts` | `test_catalog.py` | 审批页各状态 Tab 数量统计 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/access-requests/mine` | `test_catalog.py` | 当前用户提交的申请列表 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products/mine-summary` | `test_catalog.py` | 我的产品汇总、待审批数 | ✅ 通过 | 2026-06-29 |
 | `/api/portal/catalog/products/export` | `test_catalog.py` | 已发布产品 CSV 导出 | ✅ 通过 | 2026-06-29 |

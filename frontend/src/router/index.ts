@@ -62,7 +62,7 @@ const router = createRouter({
           path: 'developer',
           name: 'DeveloperPortal',
           component: () => import('../views/developer/DeveloperPortal.vue'),
-          meta: { menuCode: 'menu:developer', desktopOnly: true }
+          meta: { desktopOnly: true },
         },
         {
           path: 'datasources',

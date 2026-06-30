@@ -352,6 +352,7 @@ interface MenuItem {
   badge?: number;
   desktopOnly?: boolean;
   mobileOnly?: boolean;
+  mobileVisible?: boolean;
 }
 
 interface MenuGroup {
@@ -370,10 +371,10 @@ const menuGroups: MenuGroup[] = [
   {
     title: '数据服务',
     items: [
-      { name: '产品目录', to: '/dashboard/catalog', icon: 'catalog', perm: '', activeNames: ['Catalog', 'CatalogDetail', 'CatalogProductEdit'] },
-      { name: '我的申请', to: '/dashboard/catalog-my-applications', icon: 'catalog', perm: '', activeNames: ['CatalogMyApplications'] },
-      { name: '资产全景', to: '/dashboard/asset-panorama', icon: 'panorama', perm: 'menu:asset-panorama', activeNames: ['AssetPanorama'] },
-      { name: '权限审批', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', activeNames: ['CatalogAccessRequests'] }
+      { name: '产品目录', to: '/dashboard/catalog', icon: 'catalog', perm: '', mobileVisible: true, activeNames: ['Catalog', 'CatalogDetail', 'CatalogProductEdit'] },
+      { name: '我的申请', to: '/dashboard/catalog-my-applications', icon: 'catalog', perm: '', mobileVisible: true, activeNames: ['CatalogMyApplications'] },
+      { name: '资产全景', to: '/dashboard/asset-panorama', icon: 'panorama', perm: 'menu:asset-panorama', desktopOnly: true, activeNames: ['AssetPanorama'] },
+      { name: '权限审批', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', mobileVisible: true, activeNames: ['CatalogAccessRequests'] }
     ]
   },
   {
@@ -455,6 +456,9 @@ const filteredMenuGroups = computed(() => {
       .filter(item => {
         if (item.to === '/dashboard/catalog-requests') {
           return catalogBadge.value.can_access_requests
+        }
+        if (isMobile.value && item.mobileVisible) {
+          return true
         }
         if (!hasMenuPerm(item.perm)) return false
         if (item.desktopOnly && isMobile.value) return false

@@ -84,7 +84,7 @@ onMounted(fetchRequests)
 <template>
   <div class="space-y-6">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">我的申请</h1>
+      <h1 class="text-lg sm:text-2xl font-bold text-gray-900">我的申请</h1>
       <p class="text-sm text-gray-500 mt-1">查看您提交的数据产品 API 访问申请及处理进度</p>
     </div>
 

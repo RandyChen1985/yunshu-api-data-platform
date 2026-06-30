@@ -1163,6 +1163,45 @@ class CatalogService:
         return int(row[0] or 0) if row else 0
 
     @classmethod
+    async def count_access_requests_by_status(cls, user: Dict) -> Dict[str, int]:
+        """按状态统计审批列表数量（与 list_access_requests 可见范围一致）"""
+        is_admin_user = user.get("role") == "admin"
+        user_id = int(user["user_id"])
+
+        conditions = ["1=1"]
+        params: List[Any] = []
+        if not is_admin_user:
+            perms = user.get("permissions", {}).get("elements", [])
+            if "element:catalog:review" not in perms:
+                conditions.append("(p.owner_user_id = %s OR r.user_id = %s)")
+                params.extend([user_id, user_id])
+
+        sql = f"""
+            SELECT r.status, COUNT(*) AS cnt
+            FROM data_product_access_requests r
+            JOIN data_products p ON p.id = r.product_id
+            WHERE {' AND '.join(conditions)}
+            GROUP BY r.status
+        """
+        counts = {0: 0, 1: 0, 2: 0, 3: 0}
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, tuple(params))
+                rows = await cursor.fetchall()
+        for row in rows:
+            status = int(row[0])
+            if status in counts:
+                counts[status] = int(row[1] or 0)
+        total = sum(counts.values())
+        return {
+            "0": counts[0],
+            "1": counts[1],
+            "2": counts[2],
+            "3": counts[3],
+            "all": total,
+        }
+
+    @classmethod
     async def approve_access_request(cls, request_id: int, handler: Dict, remark: Optional[str] = None) -> bool:
         async with get_db_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:

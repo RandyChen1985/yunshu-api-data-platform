@@ -432,6 +432,17 @@ async def pending_request_count(user: dict = Depends(require_api_key)):
     }
 
 
+@router.get("/access-requests/status-counts")
+async def access_request_status_counts(user: dict = Depends(require_api_key)):
+    """审批页各 Tab 数量统计"""
+    summary = await CatalogService.get_mine_summary(user)
+    if not CatalogService.can_access_catalog_requests(
+        user, owned_products=summary["owned_products"]
+    ):
+        raise HTTPException(status_code=403, detail="无权查看权限审批")
+    return await CatalogService.count_access_requests_by_status(user)
+
+
 @router.post("/access-requests/{request_id}/approve")
 async def approve_access_request(
     request_in: Request,
