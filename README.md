@@ -16,6 +16,7 @@
 *   🚀 **动态资源服务化 (Resource-as-an-API)**：`TABLE` 零代码映射与 `SQL` 复杂逻辑封装双模式；Jinja2 动态模板 + 统一 DSL 查询入口。
 *   🧪 **SQL 实验室 (SQL Lab)**：在线编写、调试、AI 辅助生成与修复 SQL，一键发布为生产 API 资源。
 *   🗂️ **元数据与数据源治理**：多源连接管理（MySQL / ClickHouse / Oracle）、语义元数据、健康度评分与 RBAC 细粒度授权。
+*   📦 **数据产品目录 (Data Product Catalog)**：API 资源产品化发布、业务域浏览、权限申请/审批、资产全景 KPI 与调用量洞察。
 *   🛡️ **企业级安全审计**：按天分表审计日志、AST 静态 SQL 护栏、API Key + Session 双认证、数据脱敏策略。
 *   📊 **全链路可观测性**：24h/7d 调用趋势、Top 排行、分钟级统计聚合、连接池健康监控。
 *   🔌 **开放集成**：标准化 `/api/v1` 对外接口与管理后台 Portal API，可作为上游 **云枢 · 智能体平台** 的数据底座。
@@ -37,6 +38,8 @@
 | ![API 资源管理](docs/images/resource.png) | ![SQL 实验室](docs/images/sqllab.png) |
 | **🛡️ 权限与角色 (RBAC)** | **📋 全链路审计 (Audit Logs)** |
 | ![权限与角色](docs/images/rbac.png) | ![审计日志](docs/images/audit.png) |
+| **📦 数据产品目录 (Catalog)** | **🌐 资产全景 (Asset Panorama)** |
+| ![数据产品目录](docs/images/catalog.png) | ![资产全景](docs/images/panorama.png) |
 
 ---
 
@@ -75,15 +78,24 @@
 *   **分钟级聚合**：`APScheduler` 异步汇总 `api_access_stats_1m`，看板秒开。
 *   **连接池监控**：各数据源连接池活跃度与健康状态可视化。
 
+### 6. 📦 数据产品目录与资产全景
+
+*   **产品发布**：从接口管理一键发布或批量上架至目录，支持草稿 → 已发布 → 下线全生命周期。
+*   **目录浏览**：按业务域、调用量、精选推荐筛选；已发布产品元数据全员可见，权限状态一目了然。
+*   **权限申请**：无权限用户可在产品详情页提交申请，负责人/管理员审批后自动同步 API 资源权限。
+*   **资产全景**：域分布、零调用告警、KPI 统计与调用量趋势（`/api/portal/catalog/panorama`）。
+*   **治理辅助**：冗余产品检测、CSV 导出、负责人批量指定与 Playground 快捷调试入口。
+
 ---
 
 ## 🔄 典型数据消费流程
 
 1.  **注册数据源**：在管理后台配置 MySQL / ClickHouse / Oracle 连接。
 2.  **定义资源**：通过表映射或 SQL 实验室创建 `sys_resource_meta` 资源条目。
-3.  **授权发布**：为角色/用户分配资源访问权限，生成 API Key。
-4.  **对外调用**：客户端携带 `X-API-Key` 调用 `/api/v1/query` 或资源直连接口。
-5.  **审计回溯**：所有调用写入按天分表日志，支持 Trace ID 排障。
+3.  **发布到目录**：将 API 资源发布为数据产品，补充业务域、简介与负责人等元数据。
+4.  **发现与申请**：用户在数据产品目录浏览、筛选产品；无权限时提交申请，审批通过后获得访问权。
+5.  **对外调用**：客户端携带 `X-API-Key` 调用 `/api/v1/query` 或资源直连接口。
+6.  **审计回溯**：所有调用写入按天分表日志，支持 Trace ID 排障。
 
 详见 [architech/design/API_INTEGRATION_GUIDE.md](architech/design/API_INTEGRATION_GUIDE.md) · [docs/guides/getting-started.md](docs/guides/getting-started.md)
 
@@ -113,7 +125,7 @@
 ├── app/                  # 后端核心代码 (FastAPI)
 │   ├── api/              # API 接口层 (v1 对外 API / portal 管理后台)
 │   ├── core/             # 核心配置 (中间件、数据库、Redis)
-│   ├── services/         # 业务逻辑 (元数据、权限、AI、查询引擎)
+│   ├── services/         # 业务逻辑 (元数据、权限、AI、查询引擎、产品目录)
 │   │   └── data_adapter/ # 多源适配器 (MySQL / ClickHouse / Oracle)
 │   ├── utils/            # 工具类 (分表路由、加解密)
 │   └── jobs/             # 异步调度 (统计聚合、日志清理)
@@ -240,7 +252,7 @@ cd frontend && npm run dev
 
 | 平台 | 定位 |
 |------|------|
-| **数据服务平台**（本仓库） | Data API、元数据治理、SQL 实验室、审计与 RBAC |
+| **数据服务平台**（本仓库） | Data API、元数据治理、SQL 实验室、数据产品目录、资产全景、审计与 RBAC |
 | **智能体平台** | AI 对话、Agent 编排、ChatBI、知识库、MCP 插件 |
 
 ---
