@@ -216,7 +216,9 @@ const saveDingtalkPlatformConfig = async () => {
 const testDingtalkNotification = async () => {
   loading.value.dingtalk_test = true
   try {
-    await axios.post('/api/portal/system/platform-settings/dingtalk/test')
+    await axios.post('/api/portal/system/platform-settings/dingtalk/test', {
+      ...dingtalkConfig.value,
+    })
     showToast('测试消息已发送，请在钉钉群查看', 'success')
   } catch (e: any) {
     showToast(e.response?.data?.detail || '测试发送失败', 'error')
@@ -1103,15 +1105,21 @@ const formatDateTime = (val: string) => {
                 />
                 <span class="text-sm text-gray-700">启用站内变更提醒</span>
               </label>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">变更 Webhook URL（可选）</label>
-                <input
-                  v-model="catalogConfig.notify_resource_change_webhook_url"
-                  type="url"
-                  placeholder="https://..."
-                  class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
-                />
-              </div>
+              <fieldset
+                :disabled="!catalogConfig.notify_resource_change_enabled"
+                class="border-0 p-0 m-0 min-w-0 disabled:opacity-50"
+              >
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">变更 Webhook URL（可选）</label>
+                  <input
+                    v-model="catalogConfig.notify_resource_change_webhook_url"
+                    type="url"
+                    placeholder="https://..."
+                    class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                  />
+                  <p class="text-xs text-gray-400 mt-1">留空则仅站内提醒，不推送 Webhook。</p>
+                </div>
+              </fieldset>
             </div>
 
             <div>

@@ -79,13 +79,26 @@ async def test_dingtalk_send_markdown(client: AsyncClient, admin_api_key: str):
         "app.services.dingtalk_notification_service.httpx.AsyncClient",
         return_value=mock_client,
     ):
-        ok = await DingTalkNotificationService.send_test_message()
+        ok, _ = await DingTalkNotificationService.send_test_message(
+            {
+                "enabled": True,
+                "webhook_url": "https://example.com/robot/send?access_token=test",
+                "secret": "",
+            }
+        )
         assert ok is True
         assert mock_client.post.called
 
         test_api = await client.post(
             "/api/portal/system/platform-settings/dingtalk/test",
             headers=headers,
+            json={
+                "enabled": True,
+                "webhook_url": "https://example.com/robot/send?access_token=test",
+                "secret": "",
+                "notify_on_request": True,
+                "notify_on_result": True,
+            },
         )
         assert test_api.status_code == 200
 

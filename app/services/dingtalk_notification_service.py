@@ -72,12 +72,29 @@ class DingTalkNotificationService:
         return f"{url}{separator}timestamp={timestamp}&sign={sign}"
 
     @classmethod
-    async def send_markdown(cls, title: str, text: str) -> bool:
-        cfg = await cls.get_settings()
-        webhook_url = (cfg.get("webhook_url") or "").strip()
-        if not cfg.get("enabled") or not webhook_url:
+    async def send_markdown(
+        cls,
+        title: str,
+        text: str,
+        *,
+        webhook_url: Optional[str] = None,
+        secret: Optional[str] = None,
+        require_enabled: bool = True,
+    ) -> bool:
+        if webhook_url is None or secret is None:
+            cfg = await cls.get_settings()
+            if require_enabled and not cfg.get("enabled"):
+                return False
+            webhook_url = (cfg.get("webhook_url") or "").strip()
+            secret = cfg.get("secret") or ""
+        else:
+            webhook_url = (webhook_url or "").strip()
+            secret = secret or ""
+
+        if not webhook_url:
             return False
-        signed_url = cls._signed_webhook_url(webhook_url, cfg.get("secret") or "")
+
+        signed_url = cls._signed_webhook_url(webhook_url, secret)
         payload = {
             "msgtype": "markdown",
             "markdown": {"title": title, "text": text},
@@ -96,11 +113,40 @@ class DingTalkNotificationService:
             return False
 
     @classmethod
-    async def send_test_message(cls) -> bool:
-        return await cls.send_markdown(
-            "云枢数据平台",
-            "### 钉钉通知测试\n\n这是一条来自**云枢 · 数据服务平台**的测试消息，说明机器人配置可用。",
+    async def send_test_message(cls, override: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
+        """发送测试消息。override 为表单预览值，未保存也可测。"""
+        title = "云枢数据平台"
+        text = (
+            "### 钉钉通知测试\n\n"
+            "这是一条来自**云枢 · 数据服务平台**的测试消息，说明机器人配置可用。"
         )
+        if override is not None:
+            if not override.get("enabled"):
+                return False, "请先勾选「启用钉钉审批通知」"
+            webhook_url = (override.get("webhook_url") or "").strip()
+            if not webhook_url:
+                return False, "请填写 Webhook 地址"
+            secret = override.get("secret") or ""
+            ok = await cls.send_markdown(
+                title,
+                text,
+                webhook_url=webhook_url,
+                secret=secret,
+                require_enabled=False,
+            )
+            if not ok:
+                return False, "钉钉返回失败，请检查 Webhook 与加签密钥是否正确"
+            return True, ""
+
+        cfg = await cls.get_settings()
+        if not cfg.get("enabled"):
+            return False, "钉钉通知未启用，请先保存配置或勾选启用后再测试"
+        if not (cfg.get("webhook_url") or "").strip():
+            return False, "Webhook 地址为空，请先保存配置"
+        ok = await cls.send_markdown(title, text)
+        if not ok:
+            return False, "钉钉返回失败，请检查 Webhook 与加签密钥是否正确"
+        return True, ""
 
     @classmethod
     async def notify_access_request_created(

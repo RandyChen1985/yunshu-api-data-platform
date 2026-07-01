@@ -6,7 +6,7 @@ from app.services.ai_service import AIService
 from app.services.vector_service import VectorService
 from app.services.platform_settings_service import PlatformSettingsService
 from app.services.dingtalk_notification_service import DingTalkNotificationService
-from app.schemas.platform_settings import PlatformSettingsResponse, PlatformSettingsUpdate
+from app.schemas.platform_settings import PlatformSettingsResponse, PlatformSettingsUpdate, DingTalkPlatformSettings
 from app.core.redis import get_redis
 from pydantic import BaseModel
 import logging
@@ -74,10 +74,14 @@ async def update_platform_settings(
 
 
 @router.post("/platform-settings/dingtalk/test")
-async def test_dingtalk_platform_settings(user=Depends(require_permission("element:config:save"))):
-    ok = await DingTalkNotificationService.send_test_message()
+async def test_dingtalk_platform_settings(
+    body: Optional[DingTalkPlatformSettings] = Body(None),
+    user=Depends(require_permission("element:config:save")),
+):
+    override = body.model_dump() if body else None
+    ok, detail = await DingTalkNotificationService.send_test_message(override)
     if not ok:
-        raise HTTPException(status_code=400, detail="钉钉通知发送失败，请检查开关、Webhook 与加签密钥")
+        raise HTTPException(status_code=400, detail=detail or "钉钉通知发送失败")
     return {"success": True}
 
 # --- 2. AI Config Endpoints ---
