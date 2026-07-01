@@ -29,6 +29,7 @@ from app.schemas.catalog import (
     ArchiveRedundantResult,
     SyncAccessResult,
 )
+from app.schemas.resource_version import ProductLinkedResourceVersionsResponse
 from app.services.catalog_service import CatalogService, STATUS_DRAFT, REQUEST_PENDING
 from app.api.portal.endpoints.dashboard import is_admin
 
@@ -200,6 +201,27 @@ async def list_redundant_products(user: dict = Depends(require_api_key)):
 async def get_product_edit_meta(product_key: str, user: dict = Depends(require_api_key)):
     try:
         return await CatalogService.get_edit_meta(user, product_key)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.get(
+    "/products/{product_key}/linked-resource-versions",
+    response_model=ProductLinkedResourceVersionsResponse,
+)
+async def get_product_linked_resource_versions(
+    product_key: str,
+    keys: Optional[str] = Query(None, description="逗号分隔的 resource_key，默认取产品已关联资源"),
+    limit: int = Query(5, ge=1, le=20),
+    user: dict = Depends(require_api_key),
+):
+    resource_keys = [k.strip() for k in keys.split(",") if k.strip()] if keys else None
+    try:
+        return await CatalogService.get_linked_resource_versions(
+            user, product_key, resource_keys=resource_keys, limit=limit
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except PermissionError as e:

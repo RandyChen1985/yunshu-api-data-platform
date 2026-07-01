@@ -5,6 +5,7 @@ import axios from '@/utils/axios'
 import { useToast } from '@/composables/useToast'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import SearchSelect from '@/components/common/SearchSelect.vue'
+import CatalogLinkedResourceChanges from '@/components/catalog/CatalogLinkedResourceChanges.vue'
 import { renderMarkdown } from '@/utils/markdown'
 import { toFeaturedBool } from '@/utils/catalog'
 
@@ -381,6 +382,10 @@ onMounted(load)
               添加
             </button>
           </div>
+          <CatalogLinkedResourceChanges
+            :product-key="productKey"
+            :linked-resources="linkedResources"
+          />
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -11,6 +11,7 @@ import VChart from 'vue-echarts'
 import { useToast } from '@/composables/useToast'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CatalogProductName from '@/components/catalog/CatalogProductName.vue'
+import CatalogLinkedResourceChanges from '@/components/catalog/CatalogLinkedResourceChanges.vue'
 import { renderMarkdown } from '@/utils/markdown'
 import { toFeaturedBool, catalogShelfStatus } from '@/utils/catalog'
 
@@ -34,7 +35,7 @@ const requestMessage = ref('')
 const requesting = ref(false)
 const syncingAccess = ref(false)
 const revokingUserId = ref<number | null>(null)
-const activeTab = ref<'intro' | 'fields' | 'example' | 'stats' | 'access'>('intro')
+const activeTab = ref<'intro' | 'fields' | 'example' | 'stats' | 'changes' | 'access'>('intro')
 const exampleTab = ref<'resource' | 'query'>('resource')
 const selectedResourceKey = ref<string | null>(null)
 const showUnpublishModal = ref(false)
@@ -118,6 +119,14 @@ const selectedResource = computed(() => {
 })
 
 const primaryResource = computed(() => product.value?.resources?.find((r: any) => r.is_primary) || product.value?.resources?.[0])
+
+const linkedResourcesForChanges = computed(() =>
+  (product.value?.resources || []).map((r: any) => ({
+    resource_key: r.resource_key,
+    resource_name: r.resource_name,
+    is_primary: !!r.is_primary,
+  })),
+)
 
 const accessBadge = computed(() => {
   const p = product.value
@@ -425,6 +434,7 @@ onUnmounted(() => {
               { id: 'fields', label: '字段说明' },
               { id: 'example', label: '调用示例' },
               { id: 'stats', label: '使用情况' },
+              { id: 'changes', label: '配置变更' },
               ...(product.can_manage_access ? [{ id: 'access', label: '访问权限' }] : []),
             ]"
             :key="tab.id"
@@ -532,6 +542,14 @@ onUnmounted(() => {
           <p class="text-sm text-gray-500 mb-4">近 7 天调用趋势（全平台）</p>
           <VChart v-if="product.calls_trend?.length" :option="trendOption" style="height: 240px" autoresize />
           <p v-else class="text-gray-400 text-sm">暂无调用数据</p>
+        </div>
+
+        <div v-if="activeTab === 'changes'">
+          <CatalogLinkedResourceChanges
+            :product-key="productKey"
+            :linked-resources="linkedResourcesForChanges"
+            readonly
+          />
         </div>
 
         <div v-if="activeTab === 'access'">
