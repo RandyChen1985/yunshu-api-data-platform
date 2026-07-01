@@ -126,8 +126,7 @@ const router = createRouter({
         },
         {
           path: 'catalog-change-notifications',
-          name: 'CatalogChangeNotifications',
-          component: () => import('../views/CatalogChangeNotifications.vue'),
+          redirect: { path: '/dashboard/catalog', query: { openPermissions: 'changes' } },
         },
         {
           path: 'catalog-redundant',

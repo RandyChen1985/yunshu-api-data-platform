@@ -31,6 +31,7 @@ const loading = ref(true)
 const product = ref<any>(null)
 const accessHolders = ref<any[]>([])
 const isAdmin = ref(false)
+const userElements = ref<string[]>([])
 const requestMessage = ref('')
 const requesting = ref(false)
 const syncingAccess = ref(false)
@@ -144,6 +145,15 @@ const shelfStatusBadge = computed(() => catalogShelfStatus(product.value?.status
 
 const playgroundRouteFor = (r: { resource_key: string; resource_group?: string }) =>
   buildPlaygroundRoute({ resource_key: r.resource_key, resource_group: r.resource_group })
+
+const canEditLinkedResource = computed(
+  () => isAdmin.value || userElements.value.includes('element:resource:edit'),
+)
+
+const resourceEditRoute = (resourceKey: string) => ({
+  name: 'ResourceEdit' as const,
+  params: { key: resourceKey },
+})
 
 const playgroundRoute = computed(() => {
   const r = selectedResource.value || primaryResource.value
@@ -297,7 +307,11 @@ watch(productKey, () => {
 onMounted(() => {
   try {
     const u = localStorage.getItem('user_info')
-    if (u) isAdmin.value = JSON.parse(u).role === 'admin'
+    if (u) {
+      const parsed = JSON.parse(u)
+      isAdmin.value = parsed.role === 'admin'
+      userElements.value = parsed.permissions?.elements || []
+    }
   } catch { /* ignore */ }
   const tab = route.query.tab
   if (tab === 'changes') activeTab.value = 'changes'
@@ -358,6 +372,14 @@ onUnmounted(() => {
               class="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
             >
               编辑产品
+            </router-link>
+            <router-link
+              v-if="canEditLinkedResource && primaryResource"
+              :to="resourceEditRoute(primaryResource.resource_key)"
+              class="px-4 py-2 border border-indigo-200 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-50"
+              title="跳转到接口管理编辑关联 API"
+            >
+              编辑 API
             </router-link>
             <router-link
               v-if="product.has_access && playgroundRoute"
@@ -470,13 +492,22 @@ onUnmounted(() => {
                   <span v-if="r.resource_name" class="text-gray-500 ml-2">{{ r.resource_name }}</span>
                   <span v-if="r.is_primary" class="ml-2 text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">主资源</span>
                 </div>
-                <router-link
-                  v-if="product.has_access"
-                  :to="playgroundRouteFor(r)!"
-                  class="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-                >
-                  试用 →
-                </router-link>
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                  <router-link
+                    v-if="canEditLinkedResource"
+                    :to="resourceEditRoute(r.resource_key)"
+                    class="text-xs text-indigo-700 hover:text-indigo-900 font-medium border border-indigo-200 rounded px-2 py-0.5 hover:bg-indigo-50"
+                  >
+                    编辑 API
+                  </router-link>
+                  <router-link
+                    v-if="product.has_access"
+                    :to="playgroundRouteFor(r)!"
+                    class="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    试用 →
+                  </router-link>
+                </div>
               </div>
             </div>
           </div>

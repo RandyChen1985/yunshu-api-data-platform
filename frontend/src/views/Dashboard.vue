@@ -20,6 +20,7 @@ const onlineUserCount = ref(0)
 const onlineUsers = ref<any[]>([])
 const showOnlineUsersDialog = ref(false)
 const showPermissionsModal = ref(false)
+const permissionsInitialTab = ref<'resource' | 'data' | 'security' | 'changes'>('resource')
 const myResources = ref<any[]>([])
 const loadingMyResources = ref(false)
 const userPermissions = ref<any>({})
@@ -97,8 +98,17 @@ const submitChangePassword = async () => {
 }
 
 
-const openPermissionsModal = () => {
-    showPermissionsModal.value = true
+const openPermissionsModal = (tab?: 'resource' | 'data' | 'security' | 'changes') => {
+  if (tab === 'changes' && !catalogBadge.value.show_change_notifications_menu) {
+    tab = 'resource'
+  }
+  permissionsInitialTab.value = tab || 'resource'
+  showPermissionsModal.value = true
+}
+
+const onChangeNotificationsRead = (unread: number) => {
+  catalogBadge.value.change_notification_unread = unread
+  fetchCatalogBadge()
 }
 
 const fetchMyResources = async () => {
@@ -224,7 +234,22 @@ onMounted(() => {
     fetchOnlineUsers()
     fetchMyResources()
     fetchCatalogBadge()
+    tryOpenPermissionsFromQuery()
 })
+
+watch(
+  () => route.query.openPermissions,
+  () => tryOpenPermissionsFromQuery(),
+)
+
+const tryOpenPermissionsFromQuery = () => {
+  if (route.query.openPermissions === 'changes') {
+    openPermissionsModal('changes')
+    const nextQuery = { ...route.query }
+    delete nextQuery.openPermissions
+    router.replace({ path: route.path, query: nextQuery })
+  }
+}
 
 watch(() => route.path, () => {
   fetchCatalogBadge()
@@ -394,7 +419,6 @@ const menuGroups: MenuGroup[] = [
     items: [
       { name: '产品目录', to: '/dashboard/catalog', icon: 'catalog', perm: '', mobileVisible: true, activeNames: ['Catalog', 'CatalogDetail', 'CatalogProductEdit'] },
       { name: '我的申请', to: '/dashboard/catalog-my-applications', icon: 'catalog', perm: '', mobileVisible: true, activeNames: ['CatalogMyApplications'] },
-      { name: '配置变更提醒', to: '/dashboard/catalog-change-notifications', icon: 'catalog', perm: '', mobileVisible: true, activeNames: ['CatalogChangeNotifications'] },
       { name: '资产全景', to: '/dashboard/asset-panorama', icon: 'panorama', perm: 'menu:asset-panorama', desktopOnly: true, activeNames: ['AssetPanorama'] },
       { name: '权限审批', to: '/dashboard/catalog-requests', icon: 'catalog', perm: 'menu:catalog:requests', mobileVisible: true, activeNames: ['CatalogAccessRequests'] }
     ]
@@ -479,9 +503,6 @@ const filteredMenuGroups = computed(() => {
         if (item.to === '/dashboard/catalog-requests') {
           return catalogBadge.value.can_access_requests
         }
-        if (item.to === '/dashboard/catalog-change-notifications') {
-          return catalogBadge.value.show_change_notifications_menu
-        }
         if (isMobile.value && item.mobileVisible) {
           return true
         }
@@ -495,9 +516,7 @@ const filteredMenuGroups = computed(() => {
         badge:
           item.to === '/dashboard/catalog-requests'
             ? catalogBadge.value.count
-            : item.to === '/dashboard/catalog-change-notifications'
-              ? catalogBadge.value.change_notification_unread
-              : undefined,
+            : undefined,
       }))
   })).filter(group => group.items.length > 0);
 });
@@ -716,9 +735,9 @@ const filteredMenuGroups = computed(() => {
            <div class="flex items-center bg-white/80 backdrop-blur-sm border border-gray-100 rounded-full px-0.5 sm:px-1 py-0.5 sm:py-1 shadow-sm hover:shadow-md transition-all duration-300">
              <!-- My Permissions -->
              <button 
-                @click="openPermissionsModal"
-                class="flex items-center px-1 sm:px-3 py-1 sm:py-1.5 rounded-full hover:bg-indigo-50 transition-all group focus:outline-none"
-                title="查看我的资源权限"
+                @click="openPermissionsModal()"
+                class="flex items-center px-1 sm:px-3 py-1 sm:py-1.5 rounded-full hover:bg-indigo-50 transition-all group focus:outline-none relative"
+                title="查看我的资源权限与配置变更提醒"
               >
                 <div class="p-0.5 sm:p-1 bg-indigo-100 rounded-md sm:rounded-lg sm:mr-2 group-hover:rotate-12 transition-transform duration-300">
                   <svg class="h-3 w-3 sm:h-4 sm:w-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -727,6 +746,13 @@ const filteredMenuGroups = computed(() => {
                 </div>
                 <span class="hidden sm:inline text-xs font-bold text-gray-600 group-hover:text-indigo-700">我的权限</span>
                 <span class="ml-0.5 sm:ml-1.5 px-1 sm:px-1.5 py-px sm:py-0.5 bg-indigo-600 text-[9px] sm:text-[10px] font-black text-white rounded-full leading-none min-w-[16px] text-center">{{ myResources.length }}</span>
+                <span
+                  v-if="catalogBadge.change_notification_unread > 0 && catalogBadge.show_change_notifications_menu"
+                  class="absolute -top-0.5 -right-0.5 sm:top-0 sm:right-0 min-w-[14px] h-[14px] px-0.5 bg-red-500 text-[8px] font-black text-white rounded-full leading-[14px] text-center"
+                  :title="`${catalogBadge.change_notification_unread} 条配置变更未读`"
+                >
+                  {{ catalogBadge.change_notification_unread > 9 ? '9+' : catalogBadge.change_notification_unread }}
+                </span>
               </button>
 
              <div class="hidden sm:block w-px h-4 bg-gray-200 mx-1"></div>
@@ -1089,8 +1115,12 @@ const filteredMenuGroups = computed(() => {
       :dataTables="userPermissions?.data_tables"
       :maskingStrategy="userInfo.masking_strategy"
       :rateLimit="userInfo.user_rate_limit || userInfo.role_rate_limit"
+      :show-change-notifications-tab="catalogBadge.show_change_notifications_menu"
+      :change-notification-unread="catalogBadge.change_notification_unread"
+      :initial-tab="permissionsInitialTab"
       @close="showPermissionsModal = false"
       @show-toast="showToast"
+      @change-notifications-read="onChangeNotificationsRead"
     />
   </div>
 </template>

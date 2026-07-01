@@ -40,6 +40,9 @@
               <option value="resource">接口资源 ({{ resources.length }})</option>
               <option value="data">数据资产 ({{ datasourceList.length }})</option>
               <option value="security">安全策略</option>
+              <option v-if="showChangeNotificationsTab" value="changes">
+                配置变更{{ changeNotificationUnread > 0 ? ` (${changeNotificationUnread})` : '' }}
+              </option>
             </select>
           </div>
 
@@ -53,6 +56,20 @@
             </button>
             <button @click="activeTab = 'security'" class="px-4 py-2 text-sm font-bold border-b-2 transition-all" :class="activeTab === 'security' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
               安全策略
+            </button>
+            <button
+              v-if="showChangeNotificationsTab"
+              @click="activeTab = 'changes'"
+              class="px-4 py-2 text-sm font-bold border-b-2 transition-all relative"
+              :class="activeTab === 'changes' ? 'border-teal-600 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+            >
+              配置变更
+              <span
+                v-if="changeNotificationUnread > 0"
+                class="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-[10px] font-black text-white"
+              >
+                {{ changeNotificationUnread > 99 ? '99+' : changeNotificationUnread }}
+              </span>
             </button>
           </div>
 
@@ -141,6 +158,18 @@
                         ※ 提示：如果您的业务需要更高的访问配额或明文查看权限，请联系系统管理员申请。
                       </p>
                     </div>
+                  </div>
+
+                  <!-- Tab: Catalog Change Notifications -->
+                  <div v-if="activeTab === 'changes' && showChangeNotificationsTab">
+                    <CatalogChangeNotificationsPanel
+                      embedded
+                      :active="activeTab === 'changes'"
+                      @read-changed="onChangeNotificationsRead"
+                      @navigate-product="onNavigateProduct"
+                      @navigate-resource="onNavigateResource"
+                      @toast="(msg, type) => emit('show-toast', msg, type || 'info')"
+                    />
                   </div>
 
                   <!-- Tab: API Resources (Original) -->
@@ -278,21 +307,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ShieldCheckIcon, BoltIcon } from '@heroicons/vue/24/outline'
+import CatalogChangeNotificationsPanel from '@/components/catalog/CatalogChangeNotificationsPanel.vue'
 
-const props = defineProps<{
-  isOpen: boolean
-  resources: any[]
-  datasources?: string[]
-  dataTables?: string[]
-  maskingStrategy?: string
-  rateLimit?: number | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    isOpen: boolean
+    resources: any[]
+    datasources?: string[]
+    dataTables?: string[]
+    maskingStrategy?: string
+    rateLimit?: number | null
+    showChangeNotificationsTab?: boolean
+    changeNotificationUnread?: number
+    initialTab?: 'resource' | 'data' | 'security' | 'changes'
+  }>(),
+  {
+    showChangeNotificationsTab: false,
+    changeNotificationUnread: 0,
+    initialTab: 'resource',
+  },
+)
 
-const emit = defineEmits(['close', 'show-toast'])
+const emit = defineEmits(['close', 'show-toast', 'change-notifications-read'])
 
-const activeTab = ref<'resource' | 'data' | 'security'>('resource')
+const router = useRouter()
+const activeTab = ref<'resource' | 'data' | 'security' | 'changes'>('resource')
 const activeFieldsResource = ref<string | null>(null)
 const exampleResource = ref<any | null>(null)
 const exampleTab = ref<'universal' | 'direct'>('universal')
@@ -328,6 +370,33 @@ const filteredResources = computed(() => {
 
 const close = () => {
   emit('close')
+}
+
+watch(
+  () => props.isOpen,
+  (open) => {
+    if (open) {
+      if (props.initialTab === 'changes' && props.showChangeNotificationsTab) {
+        activeTab.value = 'changes'
+      } else {
+        activeTab.value = 'resource'
+      }
+    }
+  },
+)
+
+const onChangeNotificationsRead = (unread: number) => {
+  emit('change-notifications-read', unread)
+}
+
+const onNavigateProduct = (productKey: string) => {
+  close()
+  router.push({ name: 'CatalogDetail', params: { key: productKey }, query: { tab: 'changes' } })
+}
+
+const onNavigateResource = (resourceKey: string) => {
+  close()
+  router.push({ name: 'ResourceEdit', params: { key: resourceKey }, query: { tab: 'history' } })
 }
 
 const toggleFields = (resource: any) => {
