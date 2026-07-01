@@ -19,6 +19,8 @@ const productName = computed(() => branding.value.product_name)
 const loginSubtitle = computed(() => branding.value.login_subtitle)
 const iconUrl = computed(() => branding.value.icon_url)
 const showSsoTab = computed(() => !branding.value.hide_login_sso)
+const showCopyright = computed(() => branding.value.enabled && !!(branding.value.copyright_text || '').trim())
+const copyrightText = computed(() => (branding.value.copyright_text || '').trim())
 
 onMounted(async () => {
   await loadBranding()
@@ -131,10 +133,6 @@ const handleLogin = async () => {
 
       <!-- Main Title (Floating on top) -->
       <div class="absolute z-30 text-center px-8">
-        <div class="inline-flex items-center justify-center p-3 mb-6 bg-blue-500/10 rounded-2xl backdrop-blur-sm border border-blue-500/20 shadow-2xl">
-           <img v-if="iconUrl" :src="iconUrl" alt="" class="w-12 h-12 rounded-xl object-cover" />
-           <CloudIcon v-else class="w-12 h-12 text-blue-400" />
-        </div>
         <h1 class="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-br from-white via-blue-100 to-blue-400 mb-6 tracking-tight drop-shadow-2xl">
           {{ productName }}
         </h1>
@@ -247,6 +245,21 @@ const handleLogin = async () => {
            </div>
         </div>
       </div>
+
+      <footer
+        v-if="showCopyright"
+        class="absolute bottom-0 inset-x-0 z-40 pb-10 px-8 pointer-events-none"
+      >
+        <div class="mx-auto max-w-lg text-center">
+          <p class="login-copyright text-[10px] text-slate-500/55 font-extralight tracking-[0.22em] leading-[1.8] whitespace-pre-line">
+            {{ copyrightText }}
+          </p>
+          <div
+            class="mt-3 mx-auto h-px w-14 bg-gradient-to-r from-transparent via-slate-400/25 to-transparent"
+            aria-hidden="true"
+          />
+        </div>
+      </footer>
     </div>
 
     <!-- Right: Login Form -->
@@ -293,18 +306,6 @@ const handleLogin = async () => {
             </div>
           </button>
           <button 
-            @click="activeTab = 'apikey'"
-            :class="[
-              'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',
-              activeTab === 'apikey' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            ]"
-          >
-            <div class="flex items-center justify-center space-x-2">
-              <KeyIcon class="w-4 h-4" />
-              <span>API Key</span>
-            </div>
-          </button>
-          <button 
             @click="activeTab = 'password'"
             :class="[
               'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',
@@ -314,6 +315,18 @@ const handleLogin = async () => {
             <div class="flex items-center justify-center space-x-2">
               <UserIcon class="w-4 h-4" />
               <span>本地账号</span>
+            </div>
+          </button>
+          <button 
+            @click="activeTab = 'apikey'"
+            :class="[
+              'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',
+              activeTab === 'apikey' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            ]"
+          >
+            <div class="flex items-center justify-center space-x-2">
+              <KeyIcon class="w-4 h-4" />
+              <span>API Key</span>
             </div>
           </button>
         </div>
@@ -430,10 +443,24 @@ const handleLogin = async () => {
         </div>
       </div>
     </div>
+
+    <footer
+      v-if="showCopyright"
+      class="lg:hidden fixed bottom-0 inset-x-0 z-20 pb-5 pt-6 px-4 text-center pointer-events-none bg-gradient-to-t from-gray-50 via-gray-50/90 to-transparent"
+    >
+      <p class="login-copyright text-[10px] text-gray-400/85 font-extralight tracking-[0.18em] leading-[1.8] whitespace-pre-line">
+        {{ copyrightText }}
+      </p>
+    </footer>
   </div>
 </template>
 
 <style scoped>
+.login-copyright {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
 .marquee-col {
   display: flex;
   flex-direction: column;

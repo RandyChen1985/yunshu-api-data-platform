@@ -40,6 +40,7 @@ async def test_platform_settings_get_and_update(client: AsyncClient, admin_api_k
     body = res.json()
     assert "catalog" in body
     assert "dingtalk" in body
+    assert "wecom" in body
     assert "mcp" in body
     assert "branding" in body
     assert "default_owner_strategy" in body["catalog"]
@@ -97,6 +98,48 @@ async def test_dingtalk_send_markdown(client: AsyncClient, admin_api_key: str):
             json={
                 "enabled": True,
                 "webhook_url": "https://example.com/robot/send?access_token=test",
+                "secret": "",
+                "notify_on_request": True,
+                "notify_on_result": True,
+            },
+        )
+        assert test_api.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_wecom_send_markdown(client: AsyncClient, admin_api_key: str):
+    from app.services.wecom_notification_service import WeComNotificationService
+
+    headers = {"X-API-Key": admin_api_key}
+
+    mock_response = AsyncMock()
+    mock_response.raise_for_status = lambda: None
+    mock_response.json = lambda: {"errcode": 0}
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch(
+        "app.services.wecom_notification_service.httpx.AsyncClient",
+        return_value=mock_client,
+    ):
+        ok, _ = await WeComNotificationService.send_test_message(
+            {
+                "enabled": True,
+                "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+                "secret": "",
+            }
+        )
+        assert ok is True
+
+        test_api = await client.post(
+            "/api/portal/system/platform-settings/wecom/test",
+            headers=headers,
+            json={
+                "enabled": True,
+                "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
                 "secret": "",
                 "notify_on_request": True,
                 "notify_on_result": True,

@@ -18,6 +18,14 @@ class DingTalkPlatformSettings(BaseModel):
     notify_on_result: bool = True
 
 
+class WeComPlatformSettings(BaseModel):
+    enabled: bool = False
+    webhook_url: str = ""
+    secret: str = ""
+    notify_on_request: bool = True
+    notify_on_result: bool = True
+
+
 class McpPlatformSettings(BaseModel):
     enabled: bool = False
     instructions: str = ""
@@ -35,6 +43,7 @@ class BrandingPlatformSettings(BaseModel):
     hide_login_sso: bool = False
     hide_version_link: bool = False
     contact_markdown: str = ""
+    copyright_text: str = ""
 
 
 class BrandingPlatformSettingsUpdate(BaseModel):
@@ -45,6 +54,7 @@ class BrandingPlatformSettingsUpdate(BaseModel):
     hide_login_sso: bool = False
     hide_version_link: bool = False
     contact_markdown: str = ""
+    copyright_text: str = ""
 
 
 class PublicBrandingResponse(BaseModel):
@@ -55,6 +65,7 @@ class PublicBrandingResponse(BaseModel):
     hide_login_sso: bool = False
     hide_version_link: bool = False
     contact_markdown: str = ""
+    copyright_text: str = ""
 
 
 class McpPlatformSettingsUpdate(BaseModel):
@@ -78,6 +89,7 @@ class McpTestResponse(BaseModel):
 class PlatformSettingsResponse(BaseModel):
     catalog: CatalogPlatformSettings
     dingtalk: DingTalkPlatformSettings
+    wecom: WeComPlatformSettings
     mcp: McpPlatformSettings
     branding: BrandingPlatformSettings
 
@@ -85,5 +97,6 @@ class PlatformSettingsResponse(BaseModel):
 class PlatformSettingsUpdate(BaseModel):
     catalog: Optional[CatalogPlatformSettings] = None
     dingtalk: Optional[DingTalkPlatformSettings] = None
+    wecom: Optional[WeComPlatformSettings] = None
     mcp: Optional[McpPlatformSettingsUpdate] = None
     branding: Optional[BrandingPlatformSettingsUpdate] = None

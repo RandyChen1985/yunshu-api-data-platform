@@ -1241,9 +1241,9 @@ class CatalogService:
                 await conn.commit()
 
         try:
-            from app.services.dingtalk_notification_service import DingTalkNotificationService
+            from app.services.approval_notification_service import ApprovalNotificationService
 
-            await DingTalkNotificationService.notify_access_request_created(
+            await ApprovalNotificationService.notify_access_request_created(
                 request_id=int(request_id),
                 product_key=product_key,
                 product_name=product.get("display_name") or product_key,
@@ -1251,7 +1251,7 @@ class CatalogService:
                 message=message,
             )
         except Exception as e:
-            logger.warning("Failed to send DingTalk access request notification: %s", e)
+            logger.warning("Failed to send access request notification: %s", e)
         return {"id": request_id, "status": "pending"}
 
     @classmethod
@@ -1405,9 +1405,9 @@ class CatalogService:
 
         await PermissionService.invalidate_user_cache(req["user_id"])
         try:
-            from app.services.dingtalk_notification_service import DingTalkNotificationService
+            from app.services.approval_notification_service import ApprovalNotificationService
 
-            await DingTalkNotificationService.notify_access_request_handled(
+            await ApprovalNotificationService.notify_access_request_handled(
                 request_id=request_id,
                 product_key=req["product_key"],
                 product_name=req.get("product_name") or req["product_key"],
@@ -1417,7 +1417,7 @@ class CatalogService:
                 remark=remark,
             )
         except Exception as e:
-            logger.warning("Failed to send DingTalk approval notification: %s", e)
+            logger.warning("Failed to send approval notification: %s", e)
         return True
 
     @classmethod
@@ -1450,9 +1450,9 @@ class CatalogService:
                 )
                 await conn.commit()
         try:
-            from app.services.dingtalk_notification_service import DingTalkNotificationService
+            from app.services.approval_notification_service import ApprovalNotificationService
 
-            await DingTalkNotificationService.notify_access_request_handled(
+            await ApprovalNotificationService.notify_access_request_handled(
                 request_id=request_id,
                 product_key=req["product_key"],
                 product_name=req.get("product_name") or req["product_key"],
@@ -1462,7 +1462,7 @@ class CatalogService:
                 remark=remark,
             )
         except Exception as e:
-            logger.warning("Failed to send DingTalk rejection notification: %s", e)
+            logger.warning("Failed to send rejection notification: %s", e)
         return True
 
     @classmethod

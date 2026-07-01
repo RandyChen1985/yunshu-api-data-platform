@@ -86,6 +86,8 @@
 | `db-prod/V30-dingtalk-approval-notify.sql` | `test_platform_settings.py` | 钉钉审批通知配置项 | ✅ 通过 | 2026-07-01 |
 | `db-prod/V31-mcp-server-config.sql` | `test_resources_list.py` | MCP Server 开关与 instructions 配置 | ⏳ 待验 | 2026-07-01 |
 | `db-prod/V33-branding-config.sql` | `test_branding_settings_service.py`, `test_platform_settings.py` | 品牌版权个性化配置与公开接口 | ⏳ 待验 | 2026-07-01 |
+| `db-prod/V34-wecom-notify.sql` | `test_wecom_notification_service.py`, `test_platform_settings.py` | 企微群机器人审批通知 | ⏳ 待验 | 2026-07-01 |
+| `db-prod/V35-branding-copyright.sql` | `test_branding_settings_service.py` | 登录页底部版权文案配置 | ⏳ 待验 | 2026-07-01 |
 
 | `/api/portal/system/logs` | `test_system_logs.py`    | 系统配置日志、维护日志查询              | ✅ 通过 | 2026-01-27   |
 

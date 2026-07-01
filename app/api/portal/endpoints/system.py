@@ -10,11 +10,13 @@ from app.schemas.platform_settings import (
     PlatformSettingsResponse,
     PlatformSettingsUpdate,
     DingTalkPlatformSettings,
+    WeComPlatformSettings,
     McpPlatformSettingsUpdate,
     McpTestResponse,
 )
 from app.services.mcp_test_service import McpTestService
 from app.services.branding_settings_service import BrandingSettingsService
+from app.services.wecom_notification_service import WeComNotificationService
 from app.core.redis import get_redis
 from pydantic import BaseModel
 import logging
@@ -108,6 +110,18 @@ async def test_dingtalk_platform_settings(
     ok, detail = await DingTalkNotificationService.send_test_message(override)
     if not ok:
         raise HTTPException(status_code=400, detail=detail or "钉钉通知发送失败")
+    return {"success": True}
+
+
+@router.post("/platform-settings/wecom/test")
+async def test_wecom_platform_settings(
+    body: Optional[WeComPlatformSettings] = Body(None),
+    user=Depends(require_permission("element:config:save")),
+):
+    override = body.model_dump() if body else None
+    ok, detail = await WeComNotificationService.send_test_message(override)
+    if not ok:
+        raise HTTPException(status_code=400, detail=detail or "企微通知发送失败")
     return {"success": True}
 
 

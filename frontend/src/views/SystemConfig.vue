@@ -39,7 +39,7 @@ import {
   ShieldCheckIcon
 } from '@heroicons/vue/24/outline'
 const activeTab = ref<'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'platform'>('monitor')
-const platformSection = ref<'catalog' | 'dingtalk' | 'mcp' | 'branding'>('catalog')
+const platformSection = ref<'catalog' | 'dingtalk' | 'wecom' | 'mcp' | 'branding'>('catalog')
 
 const settingsTabs = [
   { id: 'monitor' as const, label: '系统监控' },
@@ -55,8 +55,9 @@ const settingsTabs = [
 const platformSections = [
   { id: 'catalog' as const, label: '数据产品目录' },
   { id: 'dingtalk' as const, label: '钉钉通知' },
+  { id: 'wecom' as const, label: '企微通知' },
   { id: 'mcp' as const, label: 'MCP 服务' },
-  { id: 'branding' as const, label: '版权信息' },
+  { id: 'branding' as const, label: '品牌个性化' },
 ]
 
 type SettingsTabId = (typeof settingsTabs)[number]['id']
@@ -91,6 +92,8 @@ const loading = ref<{ [key: string]: boolean }> ({
   platform_save: false,
   dingtalk_save: false,
   dingtalk_test: false,
+  wecom_save: false,
+  wecom_test: false,
   mcp_save: false,
   mcp_test: false,
   branding_save: false,
@@ -128,6 +131,13 @@ const dingtalkConfig = ref({
   notify_on_request: true,
   notify_on_result: true,
 })
+const wecomConfig = ref({
+  enabled: false,
+  webhook_url: '',
+  secret: '',
+  notify_on_request: true,
+  notify_on_result: true,
+})
 const mcpConfig = ref({
   enabled: false,
   instructions: '',
@@ -143,6 +153,7 @@ const brandingConfig = ref({
   hide_login_sso: false,
   hide_version_link: false,
   contact_markdown: '',
+  copyright_text: '',
 })
 const brandingIconInput = ref<HTMLInputElement | null>(null)
 interface McpTestCheck {
@@ -176,6 +187,13 @@ const applyPlatformSettings = (data: any) => {
   dingtalkConfig.value.notify_on_request = dingtalk.notify_on_request !== false
   dingtalkConfig.value.notify_on_result = dingtalk.notify_on_result !== false
 
+  const wecom = data.wecom || {}
+  wecomConfig.value.enabled = !!wecom.enabled
+  wecomConfig.value.webhook_url = wecom.webhook_url || ''
+  wecomConfig.value.secret = wecom.secret || ''
+  wecomConfig.value.notify_on_request = wecom.notify_on_request !== false
+  wecomConfig.value.notify_on_result = wecom.notify_on_result !== false
+
   const mcp = data.mcp || {}
   mcpConfig.value.enabled = !!mcp.enabled
   mcpConfig.value.instructions = mcp.instructions || ''
@@ -191,6 +209,7 @@ const applyPlatformSettings = (data: any) => {
   brandingConfig.value.hide_login_sso = !!branding.hide_login_sso
   brandingConfig.value.hide_version_link = !!branding.hide_version_link
   brandingConfig.value.contact_markdown = branding.contact_markdown || ''
+  brandingConfig.value.copyright_text = branding.copyright_text || ''
 }
 
 const fetchPlatformSettings = async () => {
@@ -260,6 +279,21 @@ const saveDingtalkPlatformConfig = async () => {
     showToast(e.response?.data?.detail || '保存失败', 'error')
   } finally {
     loading.value.dingtalk_save = false
+  }
+}
+
+const saveWecomPlatformConfig = async () => {
+  loading.value.wecom_save = true
+  try {
+    const res = await axios.put('/api/portal/system/platform-settings', {
+      wecom: { ...wecomConfig.value },
+    })
+    applyPlatformSettings(res.data)
+    showToast('企微通知配置已保存', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '保存失败', 'error')
+  } finally {
+    loading.value.wecom_save = false
   }
 }
 
@@ -351,7 +385,7 @@ const saveBrandingPlatformConfig = async () => {
     applyPlatformSettings(res.data)
     const { loadBranding } = await import('@/composables/useBranding')
     await loadBranding(true)
-    showToast('版权信息已保存', 'success')
+    showToast('品牌配置已保存', 'success')
   } catch (e: any) {
     showToast(e.response?.data?.detail || '保存失败', 'error')
   } finally {
@@ -395,6 +429,20 @@ const testDingtalkNotification = async () => {
     showToast(e.response?.data?.detail || '测试发送失败', 'error')
   } finally {
     loading.value.dingtalk_test = false
+  }
+}
+
+const testWecomNotification = async () => {
+  loading.value.wecom_test = true
+  try {
+    await axios.post('/api/portal/system/platform-settings/wecom/test', {
+      ...wecomConfig.value,
+    })
+    showToast('测试消息已发送，请在企业微信群查看', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '测试发送失败', 'error')
+  } finally {
+    loading.value.wecom_test = false
   }
 }
 
@@ -1398,6 +1446,100 @@ const formatDateTime = (val: string) => {
             </div>
           </div>
 
+          <!-- 企微通知 -->
+          <div v-show="platformSection === 'wecom'" class="space-y-6">
+            <div>
+              <h4 class="text-base font-semibold text-gray-900">企业微信通知</h4>
+              <p class="text-sm text-gray-500 mt-1">
+                目录权限申请与审批结果推送至企业微信群机器人，可与钉钉并行启用。
+              </p>
+            </div>
+
+            <label class="inline-flex items-center gap-3 cursor-pointer">
+              <input
+                v-model="wecomConfig.enabled"
+                type="checkbox"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span class="text-sm text-gray-700">启用企微审批通知</span>
+            </label>
+
+            <fieldset
+              :disabled="!wecomConfig.enabled"
+              class="space-y-6 border-0 p-0 m-0 min-w-0 disabled:opacity-50"
+            >
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Webhook 地址</label>
+                <input
+                  v-model="wecomConfig.webhook_url"
+                  type="url"
+                  placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+                  class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
+                <p class="text-xs text-gray-400 mt-1">企微群 → 群机器人 → 添加 → 复制 Webhook 地址。</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">加签密钥（可选）</label>
+                <input
+                  v-model="wecomConfig.secret"
+                  type="password"
+                  placeholder="机器人安全设置中的密钥"
+                  class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
+                <p class="text-xs text-gray-400 mt-1">若机器人启用了「加签」安全设置，请填写密钥。</p>
+              </div>
+
+              <div class="space-y-3 rounded-lg border border-gray-100 bg-gray-50 p-4 disabled:bg-gray-50">
+                <p class="text-sm font-medium text-gray-700">推送场景</p>
+                <label
+                  class="flex items-center gap-3"
+                  :class="wecomConfig.enabled ? 'cursor-pointer' : 'cursor-not-allowed'"
+                >
+                  <input
+                    v-model="wecomConfig.notify_on_request"
+                    type="checkbox"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
+                  />
+                  <span class="text-sm text-gray-700">用户提交目录权限申请时</span>
+                </label>
+                <label
+                  class="flex items-center gap-3"
+                  :class="wecomConfig.enabled ? 'cursor-pointer' : 'cursor-not-allowed'"
+                >
+                  <input
+                    v-model="wecomConfig.notify_on_result"
+                    type="checkbox"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
+                  />
+                  <span class="text-sm text-gray-700">审批通过或拒绝时</span>
+                </label>
+              </div>
+
+              <div class="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  :disabled="loading.wecom_test || loading.wecom_save || !wecomConfig.enabled"
+                  class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="testWecomNotification"
+                >
+                  {{ loading.wecom_test ? '发送中...' : '发送测试消息' }}
+                </button>
+              </div>
+            </fieldset>
+
+            <div>
+              <button
+                type="button"
+                :disabled="loading.wecom_save"
+                class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                @click="saveWecomPlatformConfig"
+              >
+                {{ loading.wecom_save ? '保存中...' : '保存企微配置' }}
+              </button>
+            </div>
+          </div>
+
           <!-- MCP 服务 -->
           <div v-show="platformSection === 'mcp'" class="space-y-6">
             <div>
@@ -1510,7 +1652,7 @@ const formatDateTime = (val: string) => {
           <div v-show="platformSection === 'branding'" class="space-y-6">
             <div class="flex items-center justify-between">
               <div>
-                <h3 class="text-lg font-bold text-gray-900">版权 / 品牌个性化</h3>
+                <h3 class="text-lg font-bold text-gray-900">品牌个性化</h3>
                 <p class="text-sm text-gray-500 mt-1">开启后可自定义产品名称、登录页、图标与联系信息</p>
               </div>
               <Switch v-model="brandingConfig.enabled" />
@@ -1598,6 +1740,17 @@ const formatDateTime = (val: string) => {
                   placeholder="支持 Markdown，将在「我的权限资产库 → 联系我们」中展示"
                 />
               </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">版权信息</label>
+                <input
+                  v-model="brandingConfig.copyright_text"
+                  type="text"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="© 2026 公司名称 · All Rights Reserved"
+                />
+                <p class="text-xs text-gray-400 mt-1">启用品牌个性化后，显示在登录页底部（小字展示，支持换行）</p>
+              </div>
             </fieldset>
 
             <div class="flex justify-end">
@@ -1607,7 +1760,7 @@ const formatDateTime = (val: string) => {
                 class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
                 @click="saveBrandingPlatformConfig"
               >
-                {{ loading.branding_save ? '保存中...' : '保存版权配置' }}
+                {{ loading.branding_save ? '保存中...' : '保存品牌配置' }}
               </button>
             </div>
           </div>

@@ -11,6 +11,7 @@ export interface PublicBranding {
   hide_login_sso: boolean
   hide_version_link: boolean
   contact_markdown: string
+  copyright_text: string
 }
 
 export const DEFAULT_BRANDING: PublicBranding = {
@@ -21,4 +22,5 @@ export const DEFAULT_BRANDING: PublicBranding = {
   hide_login_sso: false,
   hide_version_link: false,
   contact_markdown: '',
+  copyright_text: '',
 }

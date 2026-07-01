@@ -15,6 +15,7 @@ class BrandingSettingsService:
     CONFIG_HIDE_LOGIN_SSO = "branding.hide_login_sso"
     CONFIG_HIDE_VERSION_LINK = "branding.hide_version_link"
     CONFIG_CONTACT_MARKDOWN = "branding.contact_markdown"
+    CONFIG_COPYRIGHT_TEXT = "branding.copyright_text"
 
     @classmethod
     async def get_raw_settings(cls) -> Dict[str, Any]:
@@ -29,6 +30,7 @@ class BrandingSettingsService:
             "hide_login_sso": await SystemService.get_bool_config(cls.CONFIG_HIDE_LOGIN_SSO, False),
             "hide_version_link": await SystemService.get_bool_config(cls.CONFIG_HIDE_VERSION_LINK, False),
             "contact_markdown": (await SystemService.get_config(cls.CONFIG_CONTACT_MARKDOWN, "")) or "",
+            "copyright_text": (await SystemService.get_config(cls.CONFIG_COPYRIGHT_TEXT, "")) or "",
         }
 
     @classmethod
@@ -44,6 +46,7 @@ class BrandingSettingsService:
                 "hide_login_sso": False,
                 "hide_version_link": False,
                 "contact_markdown": "",
+                "copyright_text": "",
             }
         return {
             "enabled": True,
@@ -53,6 +56,7 @@ class BrandingSettingsService:
             "hide_login_sso": raw["hide_login_sso"],
             "hide_version_link": raw["hide_version_link"],
             "contact_markdown": raw["contact_markdown"],
+            "copyright_text": raw["copyright_text"],
         }
 
     @classmethod
@@ -66,6 +70,7 @@ class BrandingSettingsService:
         hide_login_sso: bool,
         hide_version_link: bool,
         contact_markdown: str,
+        copyright_text: str,
     ) -> None:
         await SystemService.set_config(
             cls.CONFIG_ENABLED,
@@ -100,5 +105,10 @@ class BrandingSettingsService:
         await SystemService.set_config(
             cls.CONFIG_CONTACT_MARKDOWN,
             contact_markdown or "",
+            "branding",
+        )
+        await SystemService.set_config(
+            cls.CONFIG_COPYRIGHT_TEXT,
+            copyright_text or "",
             "branding",
         )
