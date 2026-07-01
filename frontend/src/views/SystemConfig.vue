@@ -39,7 +39,7 @@ import {
   ShieldCheckIcon
 } from '@heroicons/vue/24/outline'
 const activeTab = ref<'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'platform'>('monitor')
-const platformSection = ref<'catalog' | 'dingtalk' | 'mcp'>('catalog')
+const platformSection = ref<'catalog' | 'dingtalk' | 'mcp' | 'branding'>('catalog')
 
 const settingsTabs = [
   { id: 'monitor' as const, label: '系统监控' },
@@ -56,6 +56,7 @@ const platformSections = [
   { id: 'catalog' as const, label: '数据产品目录' },
   { id: 'dingtalk' as const, label: '钉钉通知' },
   { id: 'mcp' as const, label: 'MCP 服务' },
+  { id: 'branding' as const, label: '版权信息' },
 ]
 
 type SettingsTabId = (typeof settingsTabs)[number]['id']
@@ -92,6 +93,8 @@ const loading = ref<{ [key: string]: boolean }> ({
   dingtalk_test: false,
   mcp_save: false,
   mcp_test: false,
+  branding_save: false,
+  branding_icon: false,
 })
 
 // Data Masking State
@@ -132,6 +135,16 @@ const mcpConfig = ref({
   sse_url: '',
   stdio_command: 'python -m yunshu_mcp',
 })
+const brandingConfig = ref({
+  enabled: false,
+  product_name: '云枢 · 数据服务平台',
+  login_subtitle: 'Yunshu API Data Platform',
+  icon_url: '/favicon.png',
+  hide_login_sso: false,
+  hide_version_link: false,
+  contact_markdown: '',
+})
+const brandingIconInput = ref<HTMLInputElement | null>(null)
 interface McpTestCheck {
   name: string
   ok: boolean
@@ -169,6 +182,15 @@ const applyPlatformSettings = (data: any) => {
   mcpConfig.value.sse_path = mcp.sse_path || '/mcp/sse'
   mcpConfig.value.sse_url = mcp.sse_url || ''
   mcpConfig.value.stdio_command = mcp.stdio_command || 'python -m yunshu_mcp'
+
+  const branding = data.branding || {}
+  brandingConfig.value.enabled = !!branding.enabled
+  brandingConfig.value.product_name = branding.product_name || '云枢 · 数据服务平台'
+  brandingConfig.value.login_subtitle = branding.login_subtitle || 'Yunshu API Data Platform'
+  brandingConfig.value.icon_url = branding.icon_url || '/favicon.png'
+  brandingConfig.value.hide_login_sso = !!branding.hide_login_sso
+  brandingConfig.value.hide_version_link = !!branding.hide_version_link
+  brandingConfig.value.contact_markdown = branding.contact_markdown || ''
 }
 
 const fetchPlatformSettings = async () => {
@@ -317,6 +339,48 @@ const copyMcpSseCursorConfig = async () => {
     showToast('已复制 Cursor SSE 配置示例', 'success')
   } catch {
     showToast('复制失败，请手动选择复制', 'error')
+  }
+}
+
+const saveBrandingPlatformConfig = async () => {
+  loading.value.branding_save = true
+  try {
+    const res = await axios.put('/api/portal/system/platform-settings', {
+      branding: { ...brandingConfig.value },
+    })
+    applyPlatformSettings(res.data)
+    const { loadBranding } = await import('@/composables/useBranding')
+    await loadBranding(true)
+    showToast('版权信息已保存', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '保存失败', 'error')
+  } finally {
+    loading.value.branding_save = false
+  }
+}
+
+const triggerBrandingIconUpload = () => {
+  brandingIconInput.value?.click()
+}
+
+const onBrandingIconSelected = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  loading.value.branding_icon = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await axios.post('/api/portal/system/branding/icon', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    brandingConfig.value.icon_url = res.data.icon_url
+    showToast('图标已上传，请保存配置后生效', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '图标上传失败', 'error')
+  } finally {
+    loading.value.branding_icon = false
   }
 }
 
@@ -1439,6 +1503,111 @@ const formatDateTime = (val: string) => {
                 @click="saveMcpPlatformConfig"
               >
                 {{ loading.mcp_save ? '保存中...' : '保存 MCP 配置' }}
+              </button>
+            </div>
+          </div>
+
+          <div v-show="platformSection === 'branding'" class="space-y-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-lg font-bold text-gray-900">版权 / 品牌个性化</h3>
+                <p class="text-sm text-gray-500 mt-1">开启后可自定义产品名称、登录页、图标与联系信息</p>
+              </div>
+              <Switch v-model="brandingConfig.enabled" />
+            </div>
+
+            <fieldset :disabled="!brandingConfig.enabled" class="space-y-4 border border-gray-100 rounded-xl p-4 disabled:opacity-60">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">产品名称</label>
+                <input
+                  v-model="brandingConfig.product_name"
+                  type="text"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="云枢 · 数据服务平台"
+                />
+                <p class="text-xs text-gray-400 mt-1">影响浏览器标题、左侧菜单栏名称、登录页</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">登录页副标题</label>
+                <input
+                  v-model="brandingConfig.login_subtitle"
+                  type="text"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="Yunshu API Data Platform"
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Logo / Favicon</label>
+                <div class="flex items-center gap-4">
+                  <img
+                    :src="brandingConfig.icon_url || '/favicon.png'"
+                    alt="Logo 预览"
+                    class="w-12 h-12 rounded-lg border border-gray-200 object-cover bg-white"
+                  />
+                  <div class="flex-1 space-y-2">
+                    <input
+                      v-model="brandingConfig.icon_url"
+                      type="text"
+                      class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm font-mono"
+                      placeholder="/favicon.png 或 /branding/icon.png"
+                    />
+                    <button
+                      type="button"
+                      class="text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                      :disabled="loading.branding_icon || !brandingConfig.enabled"
+                      @click="triggerBrandingIconUpload"
+                    >
+                      {{ loading.branding_icon ? '上传中...' : '上传图片' }}
+                    </button>
+                    <input
+                      ref="brandingIconInput"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      class="hidden"
+                      @change="onBrandingIconSelected"
+                    />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">用于登录页、侧栏左上角与浏览器标签图标（PNG/JPEG/WebP/SVG，最大 512KB）</p>
+              </div>
+
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-2 border-t border-gray-100">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">隐藏登录页 SSO</p>
+                  <p class="text-xs text-gray-400">开启后登录页不再显示 SSO 登录 Tab</p>
+                </div>
+                <Switch v-model="brandingConfig.hide_login_sso" />
+              </div>
+
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-2 border-t border-gray-100">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">隐藏版本号外链</p>
+                  <p class="text-xs text-gray-400">开启后侧栏版本号不再链接到 GitHub，并隐藏 GitHub 图标</p>
+                </div>
+                <Switch v-model="brandingConfig.hide_version_link" />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">联系信息（Markdown）</label>
+                <textarea
+                  v-model="brandingConfig.contact_markdown"
+                  rows="8"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm font-mono"
+                  placeholder="支持 Markdown，将在「我的权限资产库 → 联系我们」中展示"
+                />
+              </div>
+            </fieldset>
+
+            <div class="flex justify-end">
+              <button
+                type="button"
+                :disabled="loading.branding_save"
+                class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                @click="saveBrandingPlatformConfig"
+              >
+                {{ loading.branding_save ? '保存中...' : '保存版权配置' }}
               </button>
             </div>
           </div>

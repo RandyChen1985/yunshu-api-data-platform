@@ -43,6 +43,7 @@
               <option v-if="showChangeNotificationsTab" value="changes">
                 配置变更{{ changeNotificationUnread > 0 ? ` (${changeNotificationUnread})` : '' }}
               </option>
+              <option v-if="showAboutTab" value="about">联系我们</option>
             </select>
           </div>
 
@@ -70,6 +71,14 @@
               >
                 {{ changeNotificationUnread > 99 ? '99+' : changeNotificationUnread }}
               </span>
+            </button>
+            <button
+              v-if="showAboutTab"
+              @click="activeTab = 'about'"
+              class="px-4 py-2 text-sm font-bold border-b-2 transition-all"
+              :class="activeTab === 'about' ? 'border-gray-800 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'"
+            >
+              联系我们
             </button>
           </div>
 
@@ -169,6 +178,14 @@
                       @navigate-product="onNavigateProduct"
                       @navigate-resource="onNavigateResource"
                       @toast="(msg, type) => emit('show-toast', msg, type || 'info')"
+                    />
+                  </div>
+
+                  <!-- Tab: About / Contact -->
+                  <div v-if="activeTab === 'about' && showAboutTab" class="py-2">
+                    <div
+                      class="markdown-body prose prose-sm max-w-none text-gray-700 break-words"
+                      v-html="contactHtml"
                     />
                   </div>
 
@@ -311,6 +328,7 @@ import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ShieldCheckIcon, BoltIcon } from '@heroicons/vue/24/outline'
 import CatalogChangeNotificationsPanel from '@/components/catalog/CatalogChangeNotificationsPanel.vue'
+import { renderMarkdown } from '@/utils/markdown'
 
 const props = withDefaults(
   defineProps<{
@@ -322,11 +340,15 @@ const props = withDefaults(
     rateLimit?: number | null
     showChangeNotificationsTab?: boolean
     changeNotificationUnread?: number
-    initialTab?: 'resource' | 'data' | 'security' | 'changes'
+    showAboutTab?: boolean
+    contactMarkdown?: string
+    initialTab?: 'resource' | 'data' | 'security' | 'changes' | 'about'
   }>(),
   {
     showChangeNotificationsTab: false,
     changeNotificationUnread: 0,
+    showAboutTab: false,
+    contactMarkdown: '',
     initialTab: 'resource',
   },
 )
@@ -334,11 +356,13 @@ const props = withDefaults(
 const emit = defineEmits(['close', 'show-toast', 'change-notifications-read'])
 
 const router = useRouter()
-const activeTab = ref<'resource' | 'data' | 'security' | 'changes'>('resource')
+const activeTab = ref<'resource' | 'data' | 'security' | 'changes' | 'about'>('resource')
 const activeFieldsResource = ref<string | null>(null)
 const exampleResource = ref<any | null>(null)
 const exampleTab = ref<'universal' | 'direct'>('universal')
 const searchQuery = ref('')
+
+const contactHtml = computed(() => renderMarkdown(props.contactMarkdown || ''))
 
 // Computed Data Asset Views
 const datasourceList = computed(() => {
@@ -378,6 +402,8 @@ watch(
     if (open) {
       if (props.initialTab === 'changes' && props.showChangeNotificationsTab) {
         activeTab.value = 'changes'
+      } else if (props.initialTab === 'about' && props.showAboutTab) {
+        activeTab.value = 'about'
       } else {
         activeTab.value = 'resource'
       }

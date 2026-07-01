@@ -1,12 +1,14 @@
 from typing import Any, Dict, Optional
 
 from app.schemas.platform_settings import (
+    BrandingPlatformSettings,
     CatalogPlatformSettings,
     DingTalkPlatformSettings,
     McpPlatformSettings,
     PlatformSettingsResponse,
     PlatformSettingsUpdate,
 )
+from app.services.branding_settings_service import BrandingSettingsService
 from app.services.catalog_service import CatalogService
 from app.services.dingtalk_notification_service import DingTalkNotificationService
 from app.services.mcp_settings_service import McpSettingsService
@@ -18,10 +20,12 @@ class PlatformSettingsService:
         catalog_raw = await CatalogService.get_catalog_settings()
         dingtalk_raw = await DingTalkNotificationService.get_settings()
         mcp_raw = await McpSettingsService.get_settings(request_base_url)
+        branding_raw = await BrandingSettingsService.get_raw_settings()
         return PlatformSettingsResponse(
             catalog=CatalogPlatformSettings(**catalog_raw),
             dingtalk=DingTalkPlatformSettings(**dingtalk_raw),
             mcp=McpPlatformSettings(**mcp_raw),
+            branding=BrandingPlatformSettings(**branding_raw),
         )
 
     @classmethod
@@ -50,6 +54,16 @@ class PlatformSettingsService:
             await McpSettingsService.update_settings(
                 enabled=body.mcp.enabled,
                 instructions=body.mcp.instructions,
+            )
+        if body.branding is not None:
+            await BrandingSettingsService.update_settings(
+                enabled=body.branding.enabled,
+                product_name=body.branding.product_name,
+                login_subtitle=body.branding.login_subtitle,
+                icon_url=body.branding.icon_url,
+                hide_login_sso=body.branding.hide_login_sso,
+                hide_version_link=body.branding.hide_version_link,
+                contact_markdown=body.branding.contact_markdown,
             )
         return await cls.get_settings(request_base_url)
 

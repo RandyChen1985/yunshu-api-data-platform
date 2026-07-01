@@ -339,6 +339,10 @@ assets_path = os.path.join(frontend_dist, "assets")
 if os.path.exists(assets_path):
     app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
 
+branding_dir = "data/branding"
+os.makedirs(branding_dir, exist_ok=True)
+app.mount("/branding", StaticFiles(directory=branding_dir), name="branding")
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     # Skip API routes (handled above)

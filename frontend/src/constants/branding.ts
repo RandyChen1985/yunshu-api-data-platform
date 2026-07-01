@@ -1,0 +1,24 @@
+export const DEFAULT_PRODUCT_NAME = '云枢 · 数据服务平台'
+export const DEFAULT_LOGIN_SUBTITLE = 'Yunshu API Data Platform'
+export const DEFAULT_ICON_URL = '/favicon.png?v=20260629-2'
+export const DEFAULT_REPO_URL = 'https://github.com/RandyChen1985/yunshu-api-data-platform'
+
+export interface PublicBranding {
+  enabled: boolean
+  product_name: string
+  login_subtitle: string
+  icon_url: string
+  hide_login_sso: boolean
+  hide_version_link: boolean
+  contact_markdown: string
+}
+
+export const DEFAULT_BRANDING: PublicBranding = {
+  enabled: false,
+  product_name: DEFAULT_PRODUCT_NAME,
+  login_subtitle: DEFAULT_LOGIN_SUBTITLE,
+  icon_url: DEFAULT_ICON_URL,
+  hide_login_sso: false,
+  hide_version_link: false,
+  contact_markdown: '',
+}

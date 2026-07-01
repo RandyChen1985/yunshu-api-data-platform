@@ -41,6 +41,7 @@ async def test_platform_settings_get_and_update(client: AsyncClient, admin_api_k
     assert "catalog" in body
     assert "dingtalk" in body
     assert "mcp" in body
+    assert "branding" in body
     assert "default_owner_strategy" in body["catalog"]
 
     update = await client.put(
@@ -172,3 +173,13 @@ async def test_access_request_triggers_dingtalk(client: AsyncClient, admin_api_k
             pytest.skip("用户已有权限")
         assert create.status_code == 200, create.text
         assert mock_notify.called
+
+
+@pytest.mark.asyncio
+async def test_public_branding_endpoint(client: AsyncClient):
+    res = await client.get("/api/portal/auth/branding")
+    assert res.status_code == 200
+    body = res.json()
+    assert "product_name" in body
+    assert "icon_url" in body
+    assert body.get("hide_login_sso") is False or isinstance(body.get("hide_login_sso"), bool)

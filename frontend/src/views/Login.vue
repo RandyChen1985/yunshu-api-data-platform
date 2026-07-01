@@ -1,17 +1,37 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { login, ssoLogin, loginWithApiKey, getCurrentUser } from '@/api/auth'
 import api from '@/utils/axios'
+import { useBranding } from '@/composables/useBranding'
 import { KeyIcon, UserIcon, GlobeAltIcon, CodeBracketIcon, ChartBarIcon, ServerIcon, ShieldCheckIcon, CpuChipIcon, CloudIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
+const { branding, loadBranding } = useBranding()
 const activeTab = ref<'password' | 'apikey' | 'sso'>('password')
 const apiKey = ref('')
 const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+
+const productName = computed(() => branding.value.product_name)
+const loginSubtitle = computed(() => branding.value.login_subtitle)
+const iconUrl = computed(() => branding.value.icon_url)
+const showSsoTab = computed(() => !branding.value.hide_login_sso)
+
+onMounted(async () => {
+  await loadBranding()
+  if (branding.value.hide_login_sso && activeTab.value === 'sso') {
+    activeTab.value = 'password'
+  }
+})
+
+watch(() => branding.value.hide_login_sso, (hide) => {
+  if (hide && activeTab.value === 'sso') {
+    activeTab.value = 'password'
+  }
+})
 
 // Reset inputs when switching tabs
 watch(activeTab, () => {
@@ -112,14 +132,14 @@ const handleLogin = async () => {
       <!-- Main Title (Floating on top) -->
       <div class="absolute z-30 text-center px-8">
         <div class="inline-flex items-center justify-center p-3 mb-6 bg-blue-500/10 rounded-2xl backdrop-blur-sm border border-blue-500/20 shadow-2xl">
-           <CloudIcon class="w-10 h-10 text-blue-400 mr-3" />
-           <span class="text-white text-xl font-mono font-semibold tracking-wider">YUNSHU.DATA</span>
+           <img v-if="iconUrl" :src="iconUrl" alt="" class="w-12 h-12 rounded-xl object-cover" />
+           <CloudIcon v-else class="w-12 h-12 text-blue-400" />
         </div>
         <h1 class="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-br from-white via-blue-100 to-blue-400 mb-6 tracking-tight drop-shadow-2xl">
-          云枢·数据服务平台
+          {{ productName }}
         </h1>
         <p class="text-lg text-slate-400 max-w-lg mx-auto leading-relaxed font-light tracking-wide">
-          Yunshu API Data Platform
+          {{ loginSubtitle }}
         </p>
       </div>
 
@@ -235,17 +255,17 @@ const handleLogin = async () => {
         <div class="text-center">
           <div class="lg:hidden flex flex-col items-center mb-6">
             <img
-              src="/favicon.png?v=20260629-2"
-              alt="云枢数据服务平台"
+              :src="iconUrl"
+              :alt="productName"
               class="w-14 h-14 rounded-2xl shadow-md object-cover mb-3"
             />
-            <h1 class="text-lg font-bold text-gray-900">云枢 · 数据服务平台</h1>
+            <h1 class="text-lg font-bold text-gray-900">{{ productName }}</h1>
           </div>
           <div class="hidden lg:flex justify-center mb-4">
              <!-- Logo or Icon Animation -->
              <img
-               src="/favicon.png?v=20260629-2"
-               alt="云枢数据服务平台"
+               :src="iconUrl"
+               :alt="productName"
                class="w-20 h-20 rounded-2xl shadow-lg object-cover"
              />
           </div>
@@ -259,7 +279,8 @@ const handleLogin = async () => {
 
         <!-- Tabs -->
         <div class="flex border-b border-gray-200 mb-6">
-          <button 
+          <button
+            v-if="showSsoTab"
             @click="activeTab = 'sso'"
             :class="[
               'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',

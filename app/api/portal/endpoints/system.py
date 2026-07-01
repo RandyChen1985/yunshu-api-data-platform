@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, Body, Request, UploadFile, File
 from typing import List, Dict, Any, Optional
 from app.core.dependencies import require_admin, require_api_key, require_permission
 from app.core.database import get_db_connection
@@ -14,10 +14,22 @@ from app.schemas.platform_settings import (
     McpTestResponse,
 )
 from app.services.mcp_test_service import McpTestService
+from app.services.branding_settings_service import BrandingSettingsService
 from app.core.redis import get_redis
 from pydantic import BaseModel
 import logging
 import asyncio
+import os
+import time
+
+BRANDING_UPLOAD_DIR = "data/branding"
+ALLOWED_ICON_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+}
+MAX_ICON_BYTES = 512 * 1024
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -110,6 +122,31 @@ async def test_mcp_platform_settings(
     local_base = str(request.base_url).rstrip("/")
     _ok, result = await McpTestService.run_test(override, local_base_url=local_base)
     return result
+
+
+@router.post("/branding/icon")
+async def upload_branding_icon(
+    file: UploadFile = File(...),
+    user=Depends(require_permission("element:config:save")),
+):
+    """上传品牌 Logo / Favicon（PNG/JPEG/WebP/SVG，最大 512KB）。"""
+    content_type = (file.content_type or "").lower()
+    ext = ALLOWED_ICON_TYPES.get(content_type)
+    if not ext:
+        raise HTTPException(status_code=400, detail="仅支持 PNG、JPEG、WebP、SVG 图片")
+
+    data = await file.read()
+    if len(data) > MAX_ICON_BYTES:
+        raise HTTPException(status_code=400, detail="图片大小不能超过 512KB")
+
+    os.makedirs(BRANDING_UPLOAD_DIR, exist_ok=True)
+    filename = f"icon{ext}"
+    save_path = os.path.join(BRANDING_UPLOAD_DIR, filename)
+    with open(save_path, "wb") as f:
+        f.write(data)
+
+    icon_url = f"/branding/{filename}?t={int(time.time())}"
+    return {"icon_url": icon_url}
 
 # --- 2. AI Config Endpoints ---
 

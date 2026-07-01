@@ -27,6 +27,36 @@ class McpPlatformSettings(BaseModel):
     stdio_command: str = "python -m yunshu_mcp"
 
 
+class BrandingPlatformSettings(BaseModel):
+    enabled: bool = False
+    product_name: str = "云枢 · 数据服务平台"
+    login_subtitle: str = "Yunshu API Data Platform"
+    icon_url: str = "/favicon.png"
+    hide_login_sso: bool = False
+    hide_version_link: bool = False
+    contact_markdown: str = ""
+
+
+class BrandingPlatformSettingsUpdate(BaseModel):
+    enabled: bool = False
+    product_name: str = "云枢 · 数据服务平台"
+    login_subtitle: str = "Yunshu API Data Platform"
+    icon_url: str = "/favicon.png"
+    hide_login_sso: bool = False
+    hide_version_link: bool = False
+    contact_markdown: str = ""
+
+
+class PublicBrandingResponse(BaseModel):
+    enabled: bool = False
+    product_name: str
+    login_subtitle: str
+    icon_url: str
+    hide_login_sso: bool = False
+    hide_version_link: bool = False
+    contact_markdown: str = ""
+
+
 class McpPlatformSettingsUpdate(BaseModel):
     enabled: bool = False
     instructions: str = ""
@@ -49,9 +79,11 @@ class PlatformSettingsResponse(BaseModel):
     catalog: CatalogPlatformSettings
     dingtalk: DingTalkPlatformSettings
     mcp: McpPlatformSettings
+    branding: BrandingPlatformSettings
 
 
 class PlatformSettingsUpdate(BaseModel):
     catalog: Optional[CatalogPlatformSettings] = None
     dingtalk: Optional[DingTalkPlatformSettings] = None
     mcp: Optional[McpPlatformSettingsUpdate] = None
+    branding: Optional[BrandingPlatformSettingsUpdate] = None
