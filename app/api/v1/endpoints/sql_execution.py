@@ -99,6 +99,10 @@ def _enforce_limit(sql: str, source_type: str = "mysql") -> str:
             sql_upper = sql.upper()
             if "FETCH FIRST" in sql_upper or "FETCH NEXT" in sql_upper or "ROWNUM" in sql_upper:
                 has_limit = True
+        elif source_type == "sqlserver":
+            sql_upper = sql.upper()
+            if "TOP " in sql_upper or "FETCH NEXT" in sql_upper or "OFFSET " in sql_upper:
+                has_limit = True
         else:
             # Check for LIMIT keyword (MySQL/ClickHouse)
             for token in stmt.flatten():
@@ -119,6 +123,11 @@ def _enforce_limit(sql: str, source_type: str = "mysql") -> str:
             # Wrap with ROWNUM for maximum compatibility (11g and 12c)
             # This also ensures correctly applying limits after ORDER BY in the subquery
             return f"SELECT * FROM ({stripped_sql}) WHERE ROWNUM <= {DEFAULT_LIMIT}"
+        elif source_type == "sqlserver":
+            stripped_sql = sql.strip()
+            if stripped_sql.endswith(';'):
+                stripped_sql = stripped_sql[:-1]
+            return f"SELECT TOP {DEFAULT_LIMIT} * FROM ({stripped_sql}) AS _limited_sub"
         else:
             limit_clause = f" LIMIT {DEFAULT_LIMIT}"
             # Handle trailing semicolon
@@ -133,6 +142,10 @@ def _enforce_limit(sql: str, source_type: str = "mysql") -> str:
         if source_type == "oracle":
             if "FETCH FIRST" not in sql.upper() and "ROWNUM" not in sql.upper():
                  return f"SELECT * FROM ({sql}) WHERE ROWNUM <= {DEFAULT_LIMIT}"
+        elif source_type == "sqlserver":
+            upper = sql.upper()
+            if "TOP " not in upper and "FETCH NEXT" not in upper and "OFFSET " not in upper:
+                return f"SELECT TOP {DEFAULT_LIMIT} * FROM ({sql}) AS _limited_sub"
         else:
             if not re.search(r'\bLIMIT\s+\d+', sql, re.IGNORECASE):
                  return f"{sql} LIMIT {DEFAULT_LIMIT}"

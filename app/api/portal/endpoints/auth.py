@@ -6,6 +6,8 @@ from app.services.auth_service import AuthService
 
 from app.services.permission_service import PermissionService
 from app.schemas.auth import UserPermissionsResponse
+from app.schemas.platform_settings import PublicBrandingResponse
+from app.services.branding_settings_service import BrandingSettingsService
 
 router = APIRouter()
 
@@ -279,3 +281,9 @@ async def get_current_user_info(
             "status": "active"
         }
     }
+
+
+@router.get("/branding", summary="获取公开品牌配置", response_model=PublicBrandingResponse)
+async def get_public_branding():
+    """登录页与前端展示用，无需鉴权。"""
+    return await BrandingSettingsService.get_public_branding()

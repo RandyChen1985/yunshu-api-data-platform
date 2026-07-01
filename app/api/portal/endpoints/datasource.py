@@ -165,6 +165,13 @@ async def test_datasource_connection(
                             cursor.execute("SELECT 1 FROM DUAL")
                             cursor.fetchone()
                 await asyncio.to_thread(sync_test)
+        elif datasource.source_type == "sqlserver":
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT 1")
+                    await cursor.fetchone()
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported source type: {datasource.source_type}")
         
         return {"status": "success", "message": "Connection successful"}
     except Exception as e:

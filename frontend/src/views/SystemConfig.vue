@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import axios from '@/utils/axios'
 import { useToast } from '../composables/useToast'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -38,7 +38,8 @@ import {
   CircleStackIcon,
   ShieldCheckIcon
 } from '@heroicons/vue/24/outline'
-const activeTab = ref<'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'catalog'>('monitor')
+const activeTab = ref<'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'platform'>('monitor')
+const platformSection = ref<'catalog' | 'dingtalk' | 'wecom' | 'mcp' | 'branding'>('catalog')
 
 const settingsTabs = [
   { id: 'monitor' as const, label: '系统监控' },
@@ -48,7 +49,15 @@ const settingsTabs = [
   { id: 'logs' as const, label: '日志管理' },
   { id: 'ai' as const, label: 'AI 模型' },
   { id: 'masking' as const, label: '数据脱敏' },
+  { id: 'platform' as const, label: '系统配置' },
+]
+
+const platformSections = [
   { id: 'catalog' as const, label: '数据产品目录' },
+  { id: 'dingtalk' as const, label: '钉钉通知' },
+  { id: 'wecom' as const, label: '企微通知' },
+  { id: 'mcp' as const, label: 'MCP 服务' },
+  { id: 'branding' as const, label: '品牌个性化' },
 ]
 
 type SettingsTabId = (typeof settingsTabs)[number]['id']
@@ -79,8 +88,16 @@ const loading = ref<{ [key: string]: boolean }> ({
   rl_peak: false,
   masking_load: false,
   masking_save: false,
-  catalog_load: false,
-  catalog_save: false
+  platform_load: false,
+  platform_save: false,
+  dingtalk_save: false,
+  dingtalk_test: false,
+  wecom_save: false,
+  wecom_test: false,
+  mcp_save: false,
+  mcp_test: false,
+  branding_save: false,
+  branding_icon: false,
 })
 
 // Data Masking State
@@ -104,27 +121,110 @@ interface GroupOwnerRow {
 const catalogConfig = ref({
   default_owner_strategy: 'publisher' as 'publisher' | 'group_owner' | 'none',
   group_owner_rows: [] as GroupOwnerRow[],
+  notify_resource_change_enabled: true,
+  notify_resource_change_webhook_url: '',
 })
+const dingtalkConfig = ref({
+  enabled: false,
+  webhook_url: '',
+  secret: '',
+  notify_on_request: true,
+  notify_on_result: true,
+})
+const wecomConfig = ref({
+  enabled: false,
+  webhook_url: '',
+  secret: '',
+  notify_on_request: true,
+  notify_on_result: true,
+})
+const mcpConfig = ref({
+  enabled: false,
+  instructions: '',
+  sse_path: '/mcp/sse',
+  sse_url: '',
+  stdio_command: 'python -m yunshu_mcp',
+})
+const brandingConfig = ref({
+  enabled: false,
+  product_name: '云枢 · 数据服务平台',
+  login_subtitle: 'Yunshu API Data Platform',
+  icon_url: '/favicon.png',
+  hide_login_sso: false,
+  hide_version_link: false,
+  contact_markdown: '',
+  copyright_text: '',
+})
+const brandingIconInput = ref<HTMLInputElement | null>(null)
+interface McpTestCheck {
+  name: string
+  ok: boolean
+  detail: string
+}
+const mcpTestResult = ref<{
+  success: boolean
+  checks: McpTestCheck[]
+  tools: string[]
+  sse_url: string
+} | null>(null)
 const catalogUsers = ref<{ id: number; user_name: string; remark?: string }[]>([])
 
-const fetchCatalogConfig = async () => {
-  loading.value.catalog_load = true
+const applyPlatformSettings = (data: any) => {
+  const catalog = data.catalog || {}
+  catalogConfig.value.default_owner_strategy = catalog.default_owner_strategy || 'publisher'
+  catalogConfig.value.notify_resource_change_enabled = catalog.notify_resource_change_enabled !== false
+  catalogConfig.value.notify_resource_change_webhook_url = catalog.notify_resource_change_webhook_url || ''
+  const map = catalog.group_owner_map || {}
+  catalogConfig.value.group_owner_rows = Object.entries(map).map(([group, user_id]) => ({
+    group,
+    user_id: Number(user_id),
+  }))
+
+  const dingtalk = data.dingtalk || {}
+  dingtalkConfig.value.enabled = !!dingtalk.enabled
+  dingtalkConfig.value.webhook_url = dingtalk.webhook_url || ''
+  dingtalkConfig.value.secret = dingtalk.secret || ''
+  dingtalkConfig.value.notify_on_request = dingtalk.notify_on_request !== false
+  dingtalkConfig.value.notify_on_result = dingtalk.notify_on_result !== false
+
+  const wecom = data.wecom || {}
+  wecomConfig.value.enabled = !!wecom.enabled
+  wecomConfig.value.webhook_url = wecom.webhook_url || ''
+  wecomConfig.value.secret = wecom.secret || ''
+  wecomConfig.value.notify_on_request = wecom.notify_on_request !== false
+  wecomConfig.value.notify_on_result = wecom.notify_on_result !== false
+
+  const mcp = data.mcp || {}
+  mcpConfig.value.enabled = !!mcp.enabled
+  mcpConfig.value.instructions = mcp.instructions || ''
+  mcpConfig.value.sse_path = mcp.sse_path || '/mcp/sse'
+  mcpConfig.value.sse_url = mcp.sse_url || ''
+  mcpConfig.value.stdio_command = mcp.stdio_command || 'python -m yunshu_mcp'
+
+  const branding = data.branding || {}
+  brandingConfig.value.enabled = !!branding.enabled
+  brandingConfig.value.product_name = branding.product_name || '云枢 · 数据服务平台'
+  brandingConfig.value.login_subtitle = branding.login_subtitle || 'Yunshu API Data Platform'
+  brandingConfig.value.icon_url = branding.icon_url || '/favicon.png'
+  brandingConfig.value.hide_login_sso = !!branding.hide_login_sso
+  brandingConfig.value.hide_version_link = !!branding.hide_version_link
+  brandingConfig.value.contact_markdown = branding.contact_markdown || ''
+  brandingConfig.value.copyright_text = branding.copyright_text || ''
+}
+
+const fetchPlatformSettings = async () => {
+  loading.value.platform_load = true
   try {
     const [settingsRes, usersRes] = await Promise.all([
-      axios.get('/api/portal/catalog/settings'),
+      axios.get('/api/portal/system/platform-settings'),
       axios.get('/api/portal/catalog/assign-owner-users'),
     ])
-    catalogConfig.value.default_owner_strategy = settingsRes.data.default_owner_strategy || 'publisher'
-    const map = settingsRes.data.group_owner_map || {}
-    catalogConfig.value.group_owner_rows = Object.entries(map).map(([group, user_id]) => ({
-      group,
-      user_id: Number(user_id),
-    }))
+    applyPlatformSettings(settingsRes.data)
     catalogUsers.value = usersRes.data
   } catch {
-    showToast('目录配置加载失败', 'error')
+    showToast('系统配置加载失败', 'error')
   } finally {
-    loading.value.catalog_load = false
+    loading.value.platform_load = false
   }
 }
 
@@ -136,26 +236,213 @@ const removeGroupOwnerRow = (index: number) => {
   catalogConfig.value.group_owner_rows.splice(index, 1)
 }
 
-const saveCatalogConfig = async () => {
-  loading.value.catalog_save = true
-  try {
-    const group_owner_map: Record<string, number> = {}
-    for (const row of catalogConfig.value.group_owner_rows) {
-      const g = row.group.trim()
-      if (g && row.user_id) {
-        group_owner_map[g] = row.user_id
-      }
+const buildCatalogPayload = () => {
+  const group_owner_map: Record<string, number> = {}
+  for (const row of catalogConfig.value.group_owner_rows) {
+    const g = row.group.trim()
+    if (g && row.user_id) {
+      group_owner_map[g] = row.user_id
     }
-    await axios.put('/api/portal/catalog/settings', {
-      default_owner_strategy: catalogConfig.value.default_owner_strategy,
-      group_owner_map,
+  }
+  return {
+    default_owner_strategy: catalogConfig.value.default_owner_strategy,
+    group_owner_map,
+    notify_resource_change_enabled: catalogConfig.value.notify_resource_change_enabled,
+    notify_resource_change_webhook_url: catalogConfig.value.notify_resource_change_webhook_url,
+  }
+}
+
+const saveCatalogPlatformConfig = async () => {
+  loading.value.platform_save = true
+  try {
+    const res = await axios.put('/api/portal/system/platform-settings', {
+      catalog: buildCatalogPayload(),
     })
+    applyPlatformSettings(res.data)
     showToast('目录配置已保存', 'success')
-    await fetchCatalogConfig()
   } catch (e: any) {
     showToast(e.response?.data?.detail || '保存失败', 'error')
   } finally {
-    loading.value.catalog_save = false
+    loading.value.platform_save = false
+  }
+}
+
+const saveDingtalkPlatformConfig = async () => {
+  loading.value.dingtalk_save = true
+  try {
+    const res = await axios.put('/api/portal/system/platform-settings', {
+      dingtalk: { ...dingtalkConfig.value },
+    })
+    applyPlatformSettings(res.data)
+    showToast('钉钉通知配置已保存', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '保存失败', 'error')
+  } finally {
+    loading.value.dingtalk_save = false
+  }
+}
+
+const saveWecomPlatformConfig = async () => {
+  loading.value.wecom_save = true
+  try {
+    const res = await axios.put('/api/portal/system/platform-settings', {
+      wecom: { ...wecomConfig.value },
+    })
+    applyPlatformSettings(res.data)
+    showToast('企微通知配置已保存', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '保存失败', 'error')
+  } finally {
+    loading.value.wecom_save = false
+  }
+}
+
+const saveMcpPlatformConfig = async () => {
+  loading.value.mcp_save = true
+  try {
+    const res = await axios.put('/api/portal/system/platform-settings', {
+      mcp: {
+        enabled: mcpConfig.value.enabled,
+        instructions: mcpConfig.value.instructions,
+      },
+    })
+    applyPlatformSettings(res.data)
+    showToast('MCP 配置已保存', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '保存失败', 'error')
+  } finally {
+    loading.value.mcp_save = false
+  }
+}
+
+const testMcpServer = async () => {
+  loading.value.mcp_test = true
+  mcpTestResult.value = null
+  try {
+    const res = await axios.post('/api/portal/system/platform-settings/mcp/test', {
+      enabled: mcpConfig.value.enabled,
+      instructions: mcpConfig.value.instructions,
+    })
+    mcpTestResult.value = res.data
+    if (res.data.success) {
+      showToast('MCP 连通性测试通过', 'success')
+    } else {
+      showToast('MCP 测试未全部通过，请查看下方明细', 'error')
+    }
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '测试请求失败', 'error')
+  } finally {
+    loading.value.mcp_test = false
+  }
+}
+
+const copyMcpSseUrl = async () => {
+  const url = mcpConfig.value.sse_url
+  if (!url) {
+    showToast('暂无 SSE 地址', 'error')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(url)
+    showToast('已复制 SSE 地址', 'success')
+  } catch {
+    showToast('复制失败，请手动选择复制', 'error')
+  }
+}
+
+const mcpSseCursorExample = computed(() =>
+  JSON.stringify(
+    {
+      mcpServers: {
+        yunshu: {
+          url: mcpConfig.value.sse_url || 'https://data.example.com/mcp/sse',
+          headers: {
+            'X-API-Key': '你的个人 API Key',
+          },
+        },
+      },
+    },
+    null,
+    2,
+  ),
+)
+
+const copyMcpSseCursorConfig = async () => {
+  try {
+    await navigator.clipboard.writeText(mcpSseCursorExample.value)
+    showToast('已复制 Cursor SSE 配置示例', 'success')
+  } catch {
+    showToast('复制失败，请手动选择复制', 'error')
+  }
+}
+
+const saveBrandingPlatformConfig = async () => {
+  loading.value.branding_save = true
+  try {
+    const res = await axios.put('/api/portal/system/platform-settings', {
+      branding: { ...brandingConfig.value },
+    })
+    applyPlatformSettings(res.data)
+    const { loadBranding } = await import('@/composables/useBranding')
+    await loadBranding(true)
+    showToast('品牌配置已保存', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '保存失败', 'error')
+  } finally {
+    loading.value.branding_save = false
+  }
+}
+
+const triggerBrandingIconUpload = () => {
+  brandingIconInput.value?.click()
+}
+
+const onBrandingIconSelected = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  loading.value.branding_icon = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await axios.post('/api/portal/system/branding/icon', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    brandingConfig.value.icon_url = res.data.icon_url
+    showToast('图标已上传，请保存配置后生效', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '图标上传失败', 'error')
+  } finally {
+    loading.value.branding_icon = false
+  }
+}
+
+const testDingtalkNotification = async () => {
+  loading.value.dingtalk_test = true
+  try {
+    await axios.post('/api/portal/system/platform-settings/dingtalk/test', {
+      ...dingtalkConfig.value,
+    })
+    showToast('测试消息已发送，请在钉钉群查看', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '测试发送失败', 'error')
+  } finally {
+    loading.value.dingtalk_test = false
+  }
+}
+
+const testWecomNotification = async () => {
+  loading.value.wecom_test = true
+  try {
+    await axios.post('/api/portal/system/platform-settings/wecom/test', {
+      ...wecomConfig.value,
+    })
+    showToast('测试消息已发送，请在企业微信群查看', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '测试发送失败', 'error')
+  } finally {
+    loading.value.wecom_test = false
   }
 }
 
@@ -654,13 +941,13 @@ onMounted(() => {
 })
 
 
-const switchTab = (tab: 'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'catalog') => {
+const switchTab = (tab: 'monitor' | 'ratelimit' | 'diagnostic' | 'pools' | 'logs' | 'ai' | 'masking' | 'platform') => {
   activeTab.value = tab
   if (tab === 'pools' && pools.value.length === 0) fetchPools()
   if (tab === 'logs') fetchMaintenanceLogs()
   if (tab === 'ai') fetchAiConfig()
   if (tab === 'masking') fetchMaskingConfig()
-  if (tab === 'catalog') fetchCatalogConfig()
+  if (tab === 'platform') fetchPlatformSettings()
   if (tab === 'ratelimit') {
     fetchRateLimitConfig()
     fetchPeakData()
@@ -718,8 +1005,8 @@ const formatDateTime = (val: string) => {
         <button @click="switchTab('masking')" :class="[activeTab === 'masking' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
           <ShieldCheckIcon class="h-5 w-5 mr-2" /> 数据脱敏
         </button>
-        <button @click="switchTab('catalog')" :class="[activeTab === 'catalog' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
-          <CircleStackIcon class="h-5 w-5 mr-2" /> 数据产品目录
+        <button @click="switchTab('platform')" :class="[activeTab === 'platform' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center shrink-0']">
+          <CircleStackIcon class="h-5 w-5 mr-2" /> 系统配置
         </button>
       </nav>
     </div>
@@ -944,69 +1231,539 @@ const formatDateTime = (val: string) => {
       </div>
     </div>
 
-    <!-- Tab Content: Data Product Catalog -->
-    <div v-show="activeTab === 'catalog'" class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+    <!-- Tab Content: Platform Settings -->
+    <div v-show="activeTab === 'platform'" class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
       <div class="p-6 border-b border-gray-100">
-        <h3 class="text-lg font-bold text-gray-900">数据产品目录</h3>
-        <p class="text-sm text-gray-500 mt-1">配置从资源发布到目录时的默认负责人策略</p>
+        <h3 class="text-lg font-bold text-gray-900">系统配置</h3>
+        <p class="text-sm text-gray-500 mt-1">管理平台业务相关配置，可按模块分别保存。</p>
       </div>
-      <div v-if="loading.catalog_load" class="p-12 text-center text-gray-400">加载中...</div>
-      <div v-else class="p-6 space-y-6">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">默认负责人策略</label>
-          <select
-            v-model="catalogConfig.default_owner_strategy"
-            class="w-full max-w-md border border-gray-200 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="publisher">发布人（当前操作者）</option>
-            <option value="group_owner">按业务域映射（见下表）</option>
-            <option value="none">不自动指定</option>
-          </select>
-          <p class="text-xs text-gray-400 mt-2">
-            从「接口管理」发布资源到目录时，自动写入产品负责人。选「按业务域映射」时需配置下表。
-          </p>
-        </div>
 
-        <div v-if="catalogConfig.default_owner_strategy === 'group_owner'" class="space-y-3">
-          <div class="flex items-center justify-between">
-            <label class="text-sm font-medium text-gray-700">业务域 → 负责人</label>
-            <button type="button" class="text-sm text-indigo-600 hover:text-indigo-800" @click="addGroupOwnerRow">
-              + 添加映射
-            </button>
-          </div>
-          <div v-if="!catalogConfig.group_owner_rows.length" class="text-sm text-gray-400 bg-gray-50 rounded-lg p-4">
-            暂无映射，请点击「添加映射」
-          </div>
-          <div
-            v-for="(row, idx) in catalogConfig.group_owner_rows"
-            :key="idx"
-            class="flex flex-wrap gap-2 items-center"
-          >
-            <input
-              v-model="row.group"
-              placeholder="业务域名称（与 resource_group 一致）"
-              class="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
-            <select v-model="row.user_id" class="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm">
-              <option :value="null">选择负责人</option>
-              <option v-for="u in catalogUsers" :key="u.id" :value="u.id">
-                {{ u.user_name }}{{ u.remark ? ` (${u.remark})` : '' }}
-              </option>
-            </select>
-            <button type="button" class="text-sm text-red-600 hover:text-red-800 px-2" @click="removeGroupOwnerRow(idx)">
-              删除
-            </button>
-          </div>
-        </div>
+      <div v-if="loading.platform_load" class="p-12 text-center text-gray-400">加载中...</div>
 
-        <div class="pt-2">
+      <div v-else class="flex flex-col lg:flex-row">
+        <nav class="lg:w-52 shrink-0 border-b lg:border-b-0 lg:border-r border-gray-100 p-4 space-y-1">
           <button
-            :disabled="loading.catalog_save"
-            class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-            @click="saveCatalogConfig"
+            v-for="section in platformSections"
+            :key="section.id"
+            type="button"
+            class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+            :class="platformSection === section.id ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'"
+            @click="platformSection = section.id"
           >
-            {{ loading.catalog_save ? '保存中...' : '保存目录配置' }}
+            {{ section.label }}
           </button>
+        </nav>
+
+        <div class="flex-1 p-6 space-y-6">
+          <!-- 数据产品目录 -->
+          <div v-show="platformSection === 'catalog'" class="space-y-6">
+            <div>
+              <h4 class="text-base font-semibold text-gray-900">数据产品目录</h4>
+              <p class="text-sm text-gray-500 mt-1">配置从资源发布到目录时的默认负责人策略与 API 变更提醒。</p>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">默认负责人策略</label>
+              <select
+                v-model="catalogConfig.default_owner_strategy"
+                class="w-full max-w-md border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="publisher">发布人（当前操作者）</option>
+                <option value="group_owner">按业务域映射（见下表）</option>
+                <option value="none">不自动指定</option>
+              </select>
+              <p class="text-xs text-gray-400 mt-2">
+                从「接口管理」发布资源到目录时，自动写入产品负责人。选「按业务域映射」时需配置下表。
+              </p>
+            </div>
+
+            <div v-if="catalogConfig.default_owner_strategy === 'group_owner'" class="space-y-3">
+              <div class="flex items-center justify-between">
+                <label class="text-sm font-medium text-gray-700">业务域 → 负责人</label>
+                <button type="button" class="text-sm text-indigo-600 hover:text-indigo-800" @click="addGroupOwnerRow">
+                  + 添加映射
+                </button>
+              </div>
+              <div v-if="!catalogConfig.group_owner_rows.length" class="text-sm text-gray-400 bg-gray-50 rounded-lg p-4">
+                暂无映射，请点击「添加映射」
+              </div>
+              <div
+                v-for="(row, idx) in catalogConfig.group_owner_rows"
+                :key="idx"
+                class="flex flex-wrap gap-2 items-center"
+              >
+                <input
+                  v-model="row.group"
+                  placeholder="业务域名称（与 resource_group 一致）"
+                  class="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                />
+                <select v-model="row.user_id" class="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                  <option :value="null">选择负责人</option>
+                  <option v-for="u in catalogUsers" :key="u.id" :value="u.id">
+                    {{ u.user_name }}{{ u.remark ? ` (${u.remark})` : '' }}
+                  </option>
+                </select>
+                <button type="button" class="text-sm text-red-600 hover:text-red-800 px-2" @click="removeGroupOwnerRow(idx)">
+                  删除
+                </button>
+              </div>
+            </div>
+
+            <div class="border-t border-gray-100 pt-6 space-y-4">
+              <div>
+                <h5 class="text-sm font-semibold text-gray-900">API 变更通知</h5>
+                <p class="text-xs text-gray-400 mt-1">
+                  关联 API 被他人更新或回滚时，向产品负责人写入站内提醒；可选 Webhook 推送 JSON 事件。
+                </p>
+              </div>
+              <label class="inline-flex items-center gap-3 cursor-pointer">
+                <input
+                  v-model="catalogConfig.notify_resource_change_enabled"
+                  type="checkbox"
+                  class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span class="text-sm text-gray-700">启用站内变更提醒</span>
+              </label>
+              <fieldset
+                :disabled="!catalogConfig.notify_resource_change_enabled"
+                class="border-0 p-0 m-0 min-w-0 disabled:opacity-50"
+              >
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">变更 Webhook URL（可选）</label>
+                  <input
+                    v-model="catalogConfig.notify_resource_change_webhook_url"
+                    type="url"
+                    placeholder="https://..."
+                    class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                  />
+                  <p class="text-xs text-gray-400 mt-1">留空则仅站内提醒，不推送 Webhook。</p>
+                </div>
+              </fieldset>
+            </div>
+
+            <div>
+              <button
+                :disabled="loading.platform_save"
+                class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                @click="saveCatalogPlatformConfig"
+              >
+                {{ loading.platform_save ? '保存中...' : '保存目录配置' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 钉钉通知 -->
+          <div v-show="platformSection === 'dingtalk'" class="space-y-6">
+            <div>
+              <h4 class="text-base font-semibold text-gray-900">钉钉通知</h4>
+              <p class="text-sm text-gray-500 mt-1">
+                目录权限申请与审批结果推送至钉钉群机器人，便于负责人及时处理。
+              </p>
+            </div>
+
+            <label class="inline-flex items-center gap-3 cursor-pointer">
+              <input
+                v-model="dingtalkConfig.enabled"
+                type="checkbox"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span class="text-sm text-gray-700">启用钉钉审批通知</span>
+            </label>
+
+            <fieldset
+              :disabled="!dingtalkConfig.enabled"
+              class="space-y-6 border-0 p-0 m-0 min-w-0 disabled:opacity-50"
+            >
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Webhook 地址</label>
+                <input
+                  v-model="dingtalkConfig.webhook_url"
+                  type="url"
+                  placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."
+                  class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
+                <p class="text-xs text-gray-400 mt-1">钉钉群 → 智能群助手 → 添加机器人 → 自定义 → 复制 Webhook 地址。</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">加签密钥（可选）</label>
+                <input
+                  v-model="dingtalkConfig.secret"
+                  type="password"
+                  placeholder="SEC..."
+                  class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
+                <p class="text-xs text-gray-400 mt-1">若机器人启用了「加签」安全设置，请填写 SEC 开头的密钥。</p>
+              </div>
+
+              <div class="space-y-3 rounded-lg border border-gray-100 bg-gray-50 p-4 disabled:bg-gray-50">
+                <p class="text-sm font-medium text-gray-700">推送场景</p>
+                <label
+                  class="flex items-center gap-3"
+                  :class="dingtalkConfig.enabled ? 'cursor-pointer' : 'cursor-not-allowed'"
+                >
+                  <input
+                    v-model="dingtalkConfig.notify_on_request"
+                    type="checkbox"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
+                  />
+                  <span class="text-sm text-gray-700">用户提交目录权限申请时</span>
+                </label>
+                <label
+                  class="flex items-center gap-3"
+                  :class="dingtalkConfig.enabled ? 'cursor-pointer' : 'cursor-not-allowed'"
+                >
+                  <input
+                    v-model="dingtalkConfig.notify_on_result"
+                    type="checkbox"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
+                  />
+                  <span class="text-sm text-gray-700">审批通过或拒绝时</span>
+                </label>
+              </div>
+
+              <div class="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  :disabled="loading.dingtalk_test || loading.dingtalk_save || !dingtalkConfig.enabled"
+                  class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="testDingtalkNotification"
+                >
+                  {{ loading.dingtalk_test ? '发送中...' : '发送测试消息' }}
+                </button>
+              </div>
+            </fieldset>
+
+            <div>
+              <button
+                type="button"
+                :disabled="loading.dingtalk_save"
+                class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                @click="saveDingtalkPlatformConfig"
+              >
+                {{ loading.dingtalk_save ? '保存中...' : '保存钉钉配置' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 企微通知 -->
+          <div v-show="platformSection === 'wecom'" class="space-y-6">
+            <div>
+              <h4 class="text-base font-semibold text-gray-900">企业微信通知</h4>
+              <p class="text-sm text-gray-500 mt-1">
+                目录权限申请与审批结果推送至企业微信群机器人，可与钉钉并行启用。
+              </p>
+            </div>
+
+            <label class="inline-flex items-center gap-3 cursor-pointer">
+              <input
+                v-model="wecomConfig.enabled"
+                type="checkbox"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span class="text-sm text-gray-700">启用企微审批通知</span>
+            </label>
+
+            <fieldset
+              :disabled="!wecomConfig.enabled"
+              class="space-y-6 border-0 p-0 m-0 min-w-0 disabled:opacity-50"
+            >
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Webhook 地址</label>
+                <input
+                  v-model="wecomConfig.webhook_url"
+                  type="url"
+                  placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+                  class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
+                <p class="text-xs text-gray-400 mt-1">企微群 → 群机器人 → 添加 → 复制 Webhook 地址。</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">加签密钥（可选）</label>
+                <input
+                  v-model="wecomConfig.secret"
+                  type="password"
+                  placeholder="机器人安全设置中的密钥"
+                  class="w-full max-w-xl border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
+                <p class="text-xs text-gray-400 mt-1">若机器人启用了「加签」安全设置，请填写密钥。</p>
+              </div>
+
+              <div class="space-y-3 rounded-lg border border-gray-100 bg-gray-50 p-4 disabled:bg-gray-50">
+                <p class="text-sm font-medium text-gray-700">推送场景</p>
+                <label
+                  class="flex items-center gap-3"
+                  :class="wecomConfig.enabled ? 'cursor-pointer' : 'cursor-not-allowed'"
+                >
+                  <input
+                    v-model="wecomConfig.notify_on_request"
+                    type="checkbox"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
+                  />
+                  <span class="text-sm text-gray-700">用户提交目录权限申请时</span>
+                </label>
+                <label
+                  class="flex items-center gap-3"
+                  :class="wecomConfig.enabled ? 'cursor-pointer' : 'cursor-not-allowed'"
+                >
+                  <input
+                    v-model="wecomConfig.notify_on_result"
+                    type="checkbox"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
+                  />
+                  <span class="text-sm text-gray-700">审批通过或拒绝时</span>
+                </label>
+              </div>
+
+              <div class="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  :disabled="loading.wecom_test || loading.wecom_save || !wecomConfig.enabled"
+                  class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  @click="testWecomNotification"
+                >
+                  {{ loading.wecom_test ? '发送中...' : '发送测试消息' }}
+                </button>
+              </div>
+            </fieldset>
+
+            <div>
+              <button
+                type="button"
+                :disabled="loading.wecom_save"
+                class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                @click="saveWecomPlatformConfig"
+              >
+                {{ loading.wecom_save ? '保存中...' : '保存企微配置' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- MCP 服务 -->
+          <div v-show="platformSection === 'mcp'" class="space-y-6">
+            <div>
+              <h4 class="text-base font-semibold text-gray-900">MCP Server</h4>
+              <p class="text-sm text-gray-500 mt-1">
+                开关与 Agent 提示在下方维护；SSE 地址自动生成。客户端使用个人 API Key，与调用 Data API 相同（SSE 用 headers，stdio 用 env）。
+              </p>
+            </div>
+
+            <label class="inline-flex items-center gap-3 cursor-pointer">
+              <input
+                v-model="mcpConfig.enabled"
+                type="checkbox"
+                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span class="text-sm font-medium text-gray-800">启用 MCP Server</span>
+            </label>
+
+            <fieldset :disabled="!mcpConfig.enabled" class="space-y-4 border border-gray-100 rounded-xl p-4 disabled:opacity-60">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Agent 提示文案 (instructions)</label>
+                <textarea
+                  v-model="mcpConfig.instructions"
+                  rows="4"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="描述 MCP 工具使用顺序与注意事项..."
+                />
+              </div>
+
+              <div class="bg-gray-50 rounded-lg p-4 text-xs text-gray-600 space-y-2">
+                <div v-if="mcpConfig.sse_url" class="flex items-start gap-2">
+                  <span class="text-gray-400 shrink-0">SSE 完整地址：</span>
+                  <code class="font-mono text-indigo-700 break-all flex-1">{{ mcpConfig.sse_url }}</code>
+                  <button
+                    type="button"
+                    class="shrink-0 px-2 py-1 text-xs rounded border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50"
+                    title="复制 SSE 地址"
+                    @click="copyMcpSseUrl"
+                  >
+                    复制
+                  </button>
+                </div>
+                <p v-else class="text-gray-400">SSE 地址将在加载配置后根据当前访问地址生成</p>
+                <div class="pt-2 border-t border-gray-200">
+                  <div class="flex items-center justify-between gap-2 mb-1">
+                    <span class="text-gray-400">Cursor SSE 配置示例</span>
+                    <button
+                      type="button"
+                      class="shrink-0 px-2 py-1 text-xs rounded border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50"
+                      @click="copyMcpSseCursorConfig"
+                    >
+                      复制配置
+                    </button>
+                  </div>
+                  <pre class="bg-white rounded p-2 overflow-x-auto text-[11px] leading-relaxed font-mono text-gray-700">{{ mcpSseCursorExample }}</pre>
+                </div>
+                <p><span class="text-gray-400">stdio 启动：</span><code class="font-mono">{{ mcpConfig.stdio_command }}</code></p>
+                <p class="text-gray-500 pt-2 leading-relaxed">
+                  远程客户端推荐 SSE：复制上方配置，将 <code class="bg-white px-1 rounded">X-API-Key</code> 换成个人 Key（与门户「我的 API Key」相同）。
+                  本机开发可用 stdio，在 <code class="bg-white px-1 rounded">env</code> 中配置 <code class="bg-white px-1 rounded">YUNSHU_API_KEY</code> 与 <code class="bg-white px-1 rounded">YUNSHU_BASE_URL</code>。
+                </p>
+              </div>
+            </fieldset>
+
+            <div
+              v-if="mcpTestResult"
+              class="rounded-xl border p-4 space-y-2"
+              :class="mcpTestResult.success ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'"
+            >
+              <p class="text-sm font-medium" :class="mcpTestResult.success ? 'text-green-800' : 'text-amber-800'">
+                {{ mcpTestResult.success ? '测试通过' : '部分检查未通过' }}
+                <span v-if="mcpTestResult.tools.length" class="font-normal text-gray-600">
+                  — 工具：{{ mcpTestResult.tools.join('、') }}
+                </span>
+              </p>
+              <ul class="space-y-1">
+                <li
+                  v-for="(item, idx) in mcpTestResult.checks"
+                  :key="idx"
+                  class="text-xs flex items-start gap-2"
+                >
+                  <span :class="item.ok ? 'text-green-600' : 'text-red-600'">{{ item.ok ? '✓' : '✗' }}</span>
+                  <span class="text-gray-700">
+                    <span class="font-medium">{{ item.name }}：</span>{{ item.detail }}
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button
+                type="button"
+                :disabled="loading.mcp_test || loading.mcp_save || !mcpConfig.enabled"
+                class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="testMcpServer"
+              >
+                {{ loading.mcp_test ? '测试中...' : '连通性测试' }}
+              </button>
+              <button
+                type="button"
+                :disabled="loading.mcp_save || loading.mcp_test"
+                class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                @click="saveMcpPlatformConfig"
+              >
+                {{ loading.mcp_save ? '保存中...' : '保存 MCP 配置' }}
+              </button>
+            </div>
+          </div>
+
+          <div v-show="platformSection === 'branding'" class="space-y-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-lg font-bold text-gray-900">品牌个性化</h3>
+                <p class="text-sm text-gray-500 mt-1">开启后可自定义产品名称、登录页、图标与联系信息</p>
+              </div>
+              <Switch v-model="brandingConfig.enabled" />
+            </div>
+
+            <fieldset :disabled="!brandingConfig.enabled" class="space-y-4 border border-gray-100 rounded-xl p-4 disabled:opacity-60">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">产品名称</label>
+                <input
+                  v-model="brandingConfig.product_name"
+                  type="text"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="云枢 · 数据服务平台"
+                />
+                <p class="text-xs text-gray-400 mt-1">影响浏览器标题、左侧菜单栏名称、登录页</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">登录页副标题</label>
+                <input
+                  v-model="brandingConfig.login_subtitle"
+                  type="text"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="Yunshu API Data Platform"
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Logo / Favicon</label>
+                <div class="flex items-center gap-4">
+                  <img
+                    :src="brandingConfig.icon_url || '/favicon.png'"
+                    alt="Logo 预览"
+                    class="w-12 h-12 rounded-lg border border-gray-200 object-cover bg-white"
+                  />
+                  <div class="flex-1 space-y-2">
+                    <input
+                      v-model="brandingConfig.icon_url"
+                      type="text"
+                      class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm font-mono"
+                      placeholder="/favicon.png 或 /branding/icon.png"
+                    />
+                    <button
+                      type="button"
+                      class="text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                      :disabled="loading.branding_icon || !brandingConfig.enabled"
+                      @click="triggerBrandingIconUpload"
+                    >
+                      {{ loading.branding_icon ? '上传中...' : '上传图片' }}
+                    </button>
+                    <input
+                      ref="brandingIconInput"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      class="hidden"
+                      @change="onBrandingIconSelected"
+                    />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">用于登录页、侧栏左上角与浏览器标签图标（PNG/JPEG/WebP/SVG，最大 512KB）</p>
+              </div>
+
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-2 border-t border-gray-100">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">隐藏登录页 SSO</p>
+                  <p class="text-xs text-gray-400">开启后登录页不再显示 SSO 登录 Tab</p>
+                </div>
+                <Switch v-model="brandingConfig.hide_login_sso" />
+              </div>
+
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-2 border-t border-gray-100">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">隐藏版本号外链</p>
+                  <p class="text-xs text-gray-400">开启后侧栏版本号不再链接到 GitHub，并隐藏 GitHub 图标</p>
+                </div>
+                <Switch v-model="brandingConfig.hide_version_link" />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">联系信息（Markdown）</label>
+                <textarea
+                  v-model="brandingConfig.contact_markdown"
+                  rows="8"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm font-mono"
+                  placeholder="支持 Markdown，将在「我的权限资产库 → 联系我们」中展示"
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">版权信息</label>
+                <input
+                  v-model="brandingConfig.copyright_text"
+                  type="text"
+                  class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="© 2026 公司名称 · All Rights Reserved"
+                />
+                <p class="text-xs text-gray-400 mt-1">启用品牌个性化后，显示在登录页底部（小字展示，支持换行）</p>
+              </div>
+            </fieldset>
+
+            <div class="flex justify-end">
+              <button
+                type="button"
+                :disabled="loading.branding_save"
+                class="inline-flex items-center px-6 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                @click="saveBrandingPlatformConfig"
+              >
+                {{ loading.branding_save ? '保存中...' : '保存品牌配置' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

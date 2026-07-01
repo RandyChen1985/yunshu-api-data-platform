@@ -1,13 +1,37 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request, UploadFile, File
 from typing import List, Dict, Any, Optional
 from app.core.dependencies import require_admin, require_api_key, require_permission
 from app.core.database import get_db_connection
 from app.services.ai_service import AIService
 from app.services.vector_service import VectorService
+from app.services.platform_settings_service import PlatformSettingsService
+from app.services.dingtalk_notification_service import DingTalkNotificationService
+from app.schemas.platform_settings import (
+    PlatformSettingsResponse,
+    PlatformSettingsUpdate,
+    DingTalkPlatformSettings,
+    WeComPlatformSettings,
+    McpPlatformSettingsUpdate,
+    McpTestResponse,
+)
+from app.services.mcp_test_service import McpTestService
+from app.services.branding_settings_service import BrandingSettingsService
+from app.services.wecom_notification_service import WeComNotificationService
 from app.core.redis import get_redis
 from pydantic import BaseModel
 import logging
 import asyncio
+import os
+import time
+
+BRANDING_UPLOAD_DIR = "data/branding"
+ALLOWED_ICON_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+}
+MAX_ICON_BYTES = 512 * 1024
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -54,6 +78,89 @@ async def update_system_config(payload: Dict[str, str], user=Depends(require_per
                     logger.warning(f"Failed to invalidate cache for {key}: {e}")
                     
     return {"message": "Configuration updated successfully"}
+
+
+@router.get("/platform-settings", response_model=PlatformSettingsResponse)
+async def get_platform_settings(
+    request: Request,
+    user=Depends(require_permission("element:config:save")),
+):
+    """平台业务配置：数据产品目录、钉钉通知等"""
+    return await PlatformSettingsService.get_settings(str(request.base_url).rstrip("/"))
+
+
+@router.put("/platform-settings", response_model=PlatformSettingsResponse)
+async def update_platform_settings(
+    request: Request,
+    body: PlatformSettingsUpdate,
+    user=Depends(require_permission("element:config:save")),
+):
+    return await PlatformSettingsService.update_settings(
+        body,
+        request_base_url=str(request.base_url).rstrip("/"),
+    )
+
+
+@router.post("/platform-settings/dingtalk/test")
+async def test_dingtalk_platform_settings(
+    body: Optional[DingTalkPlatformSettings] = Body(None),
+    user=Depends(require_permission("element:config:save")),
+):
+    override = body.model_dump() if body else None
+    ok, detail = await DingTalkNotificationService.send_test_message(override)
+    if not ok:
+        raise HTTPException(status_code=400, detail=detail or "钉钉通知发送失败")
+    return {"success": True}
+
+
+@router.post("/platform-settings/wecom/test")
+async def test_wecom_platform_settings(
+    body: Optional[WeComPlatformSettings] = Body(None),
+    user=Depends(require_permission("element:config:save")),
+):
+    override = body.model_dump() if body else None
+    ok, detail = await WeComNotificationService.send_test_message(override)
+    if not ok:
+        raise HTTPException(status_code=400, detail=detail or "企微通知发送失败")
+    return {"success": True}
+
+
+@router.post("/platform-settings/mcp/test", response_model=McpTestResponse)
+async def test_mcp_platform_settings(
+    request: Request,
+    body: Optional[McpPlatformSettingsUpdate] = Body(None),
+    user=Depends(require_permission("element:config:save")),
+):
+    """探测 MCP SDK、状态探针与 SSE 端点（支持未保存的表单值）。"""
+    override = body.model_dump() if body else None
+    local_base = str(request.base_url).rstrip("/")
+    _ok, result = await McpTestService.run_test(override, local_base_url=local_base)
+    return result
+
+
+@router.post("/branding/icon")
+async def upload_branding_icon(
+    file: UploadFile = File(...),
+    user=Depends(require_permission("element:config:save")),
+):
+    """上传品牌 Logo / Favicon（PNG/JPEG/WebP/SVG，最大 512KB）。"""
+    content_type = (file.content_type or "").lower()
+    ext = ALLOWED_ICON_TYPES.get(content_type)
+    if not ext:
+        raise HTTPException(status_code=400, detail="仅支持 PNG、JPEG、WebP、SVG 图片")
+
+    data = await file.read()
+    if len(data) > MAX_ICON_BYTES:
+        raise HTTPException(status_code=400, detail="图片大小不能超过 512KB")
+
+    os.makedirs(BRANDING_UPLOAD_DIR, exist_ok=True)
+    filename = f"icon{ext}"
+    save_path = os.path.join(BRANDING_UPLOAD_DIR, filename)
+    with open(save_path, "wb") as f:
+        f.write(data)
+
+    icon_url = f"/branding/{filename}?t={int(time.time())}"
+    return {"icon_url": icon_url}
 
 # --- 2. AI Config Endpoints ---
 

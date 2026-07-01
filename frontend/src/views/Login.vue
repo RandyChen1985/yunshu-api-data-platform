@@ -1,17 +1,39 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { login, ssoLogin, loginWithApiKey, getCurrentUser } from '@/api/auth'
 import api from '@/utils/axios'
+import { useBranding } from '@/composables/useBranding'
 import { KeyIcon, UserIcon, GlobeAltIcon, CodeBracketIcon, ChartBarIcon, ServerIcon, ShieldCheckIcon, CpuChipIcon, CloudIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
+const { branding, loadBranding } = useBranding()
 const activeTab = ref<'password' | 'apikey' | 'sso'>('password')
 const apiKey = ref('')
 const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+
+const productName = computed(() => branding.value.product_name)
+const loginSubtitle = computed(() => branding.value.login_subtitle)
+const iconUrl = computed(() => branding.value.icon_url)
+const showSsoTab = computed(() => !branding.value.hide_login_sso)
+const showCopyright = computed(() => branding.value.enabled && !!(branding.value.copyright_text || '').trim())
+const copyrightText = computed(() => (branding.value.copyright_text || '').trim())
+
+onMounted(async () => {
+  await loadBranding()
+  if (branding.value.hide_login_sso && activeTab.value === 'sso') {
+    activeTab.value = 'password'
+  }
+})
+
+watch(() => branding.value.hide_login_sso, (hide) => {
+  if (hide && activeTab.value === 'sso') {
+    activeTab.value = 'password'
+  }
+})
 
 // Reset inputs when switching tabs
 watch(activeTab, () => {
@@ -111,15 +133,11 @@ const handleLogin = async () => {
 
       <!-- Main Title (Floating on top) -->
       <div class="absolute z-30 text-center px-8">
-        <div class="inline-flex items-center justify-center p-3 mb-6 bg-blue-500/10 rounded-2xl backdrop-blur-sm border border-blue-500/20 shadow-2xl">
-           <CloudIcon class="w-10 h-10 text-blue-400 mr-3" />
-           <span class="text-white text-xl font-mono font-semibold tracking-wider">YUNSHU.DATA</span>
-        </div>
         <h1 class="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-br from-white via-blue-100 to-blue-400 mb-6 tracking-tight drop-shadow-2xl">
-          云枢·数据服务平台
+          {{ productName }}
         </h1>
         <p class="text-lg text-slate-400 max-w-lg mx-auto leading-relaxed font-light tracking-wide">
-          Yunshu API Data Platform
+          {{ loginSubtitle }}
         </p>
       </div>
 
@@ -227,6 +245,21 @@ const handleLogin = async () => {
            </div>
         </div>
       </div>
+
+      <footer
+        v-if="showCopyright"
+        class="absolute bottom-0 inset-x-0 z-40 pb-10 px-8 pointer-events-none"
+      >
+        <div class="mx-auto max-w-lg text-center">
+          <p class="login-copyright text-[10px] text-slate-500/55 font-extralight tracking-[0.22em] leading-[1.8] whitespace-pre-line">
+            {{ copyrightText }}
+          </p>
+          <div
+            class="mt-3 mx-auto h-px w-14 bg-gradient-to-r from-transparent via-slate-400/25 to-transparent"
+            aria-hidden="true"
+          />
+        </div>
+      </footer>
     </div>
 
     <!-- Right: Login Form -->
@@ -235,17 +268,17 @@ const handleLogin = async () => {
         <div class="text-center">
           <div class="lg:hidden flex flex-col items-center mb-6">
             <img
-              src="/favicon.png?v=20260629-2"
-              alt="云枢数据服务平台"
+              :src="iconUrl"
+              :alt="productName"
               class="w-14 h-14 rounded-2xl shadow-md object-cover mb-3"
             />
-            <h1 class="text-lg font-bold text-gray-900">云枢 · 数据服务平台</h1>
+            <h1 class="text-lg font-bold text-gray-900">{{ productName }}</h1>
           </div>
           <div class="hidden lg:flex justify-center mb-4">
              <!-- Logo or Icon Animation -->
              <img
-               src="/favicon.png?v=20260629-2"
-               alt="云枢数据服务平台"
+               :src="iconUrl"
+               :alt="productName"
                class="w-20 h-20 rounded-2xl shadow-lg object-cover"
              />
           </div>
@@ -259,7 +292,8 @@ const handleLogin = async () => {
 
         <!-- Tabs -->
         <div class="flex border-b border-gray-200 mb-6">
-          <button 
+          <button
+            v-if="showSsoTab"
             @click="activeTab = 'sso'"
             :class="[
               'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',
@@ -272,18 +306,6 @@ const handleLogin = async () => {
             </div>
           </button>
           <button 
-            @click="activeTab = 'apikey'"
-            :class="[
-              'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',
-              activeTab === 'apikey' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            ]"
-          >
-            <div class="flex items-center justify-center space-x-2">
-              <KeyIcon class="w-4 h-4" />
-              <span>API Key</span>
-            </div>
-          </button>
-          <button 
             @click="activeTab = 'password'"
             :class="[
               'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',
@@ -293,6 +315,18 @@ const handleLogin = async () => {
             <div class="flex items-center justify-center space-x-2">
               <UserIcon class="w-4 h-4" />
               <span>本地账号</span>
+            </div>
+          </button>
+          <button 
+            @click="activeTab = 'apikey'"
+            :class="[
+              'flex-1 pb-4 text-sm font-medium text-center border-b-2 transition-colors duration-200',
+              activeTab === 'apikey' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            ]"
+          >
+            <div class="flex items-center justify-center space-x-2">
+              <KeyIcon class="w-4 h-4" />
+              <span>API Key</span>
             </div>
           </button>
         </div>
@@ -409,10 +443,24 @@ const handleLogin = async () => {
         </div>
       </div>
     </div>
+
+    <footer
+      v-if="showCopyright"
+      class="lg:hidden fixed bottom-0 inset-x-0 z-20 pb-5 pt-6 px-4 text-center pointer-events-none bg-gradient-to-t from-gray-50 via-gray-50/90 to-transparent"
+    >
+      <p class="login-copyright text-[10px] text-gray-400/85 font-extralight tracking-[0.18em] leading-[1.8] whitespace-pre-line">
+        {{ copyrightText }}
+      </p>
+    </footer>
   </div>
 </template>
 
 <style scoped>
+.login-copyright {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
 .marquee-col {
   display: flex;
   flex-direction: column;

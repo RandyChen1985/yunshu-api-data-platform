@@ -12,6 +12,11 @@ except ImportError:
     oracledb = None
     import platform
     import os
+
+try:
+    import aioodbc
+except ImportError:
+    aioodbc = None
     
 import logging
 
@@ -176,6 +181,39 @@ class DataSourcePoolManager:
         logger.debug("Oracle DSN: SID from database_name (default, aligned with AI Agent platform)")
         return dsn
 
+    @staticmethod
+    def _build_sqlserver_dsn(datasource: Any) -> str:
+        """构建 SQL Server ODBC 连接串（需本机安装 ODBC Driver 17/18）。"""
+        if aioodbc is None:
+            raise RuntimeError("aioodbc 未安装，请执行 pip install aioodbc 并安装 Microsoft ODBC Driver")
+
+        extra = datasource.extra_params
+        if isinstance(extra, str):
+            extra = json.loads(extra.strip()) if extra.strip() else {}
+        if not isinstance(extra, dict):
+            extra = {}
+        extra = extra or {}
+
+        driver = extra.get("odbc_driver") or "ODBC Driver 18 for SQL Server"
+        trust = extra.get("trust_server_certificate", True)
+        host = datasource.host
+        port = int(datasource.port or 1433)
+        server = f"{host},{port}" if port else host
+        database = datasource.database_name or "master"
+
+        parts = [
+            f"DRIVER={{{driver}}}",
+            f"SERVER={server}",
+            f"DATABASE={database}",
+        ]
+        if datasource.username:
+            parts.append(f"UID={datasource.username}")
+        if datasource.password:
+            parts.append(f"PWD={datasource.password}")
+        if trust:
+            parts.append("TrustServerCertificate=yes")
+        return ";".join(parts)
+
     @classmethod
     async def get_pool(cls, source_id: int):
         """Get or create connection pool for a data source"""
@@ -200,6 +238,8 @@ class DataSourcePoolManager:
             pool = await cls._create_mysql_pool(datasource)
         elif datasource.source_type == "oracle":
             pool = await cls._create_oracle_pool(datasource)
+        elif datasource.source_type == "sqlserver":
+            pool = await cls._create_sqlserver_pool(datasource)
         else:
             raise NotImplementedError(f"Unsupported data source type: {datasource.source_type}")
         
@@ -279,6 +319,18 @@ class DataSourcePoolManager:
             autocommit=False
         )
         return pool
+
+    @classmethod
+    async def _create_sqlserver_pool(cls, datasource):
+        """Create SQL Server connection pool (aioodbc)"""
+        dsn = cls._build_sqlserver_dsn(datasource)
+        pool = await aioodbc.create_pool(
+            dsn=dsn,
+            minsize=1,
+            maxsize=50,
+            autocommit=True,
+        )
+        return pool
     
     @classmethod
     async def invalidate_pool(cls, source_id: int):
@@ -325,6 +377,13 @@ class DataSourcePoolManager:
             status["min"] = pool.minsize
             status["active"] = pool.size
             status["free"] = pool.freesize
+
+        # SQL Server (aioodbc)
+        elif aioodbc is not None and isinstance(pool, aioodbc.Pool):
+            status["max"] = pool.maxsize
+            status["min"] = pool.minsize
+            status["active"] = pool.size
+            status["free"] = pool.freesize
         
         # Oracle (oracledb)
         elif hasattr(pool, 'opened'): # oracledb.AsyncPool
@@ -351,7 +410,13 @@ class DataSourcePoolManager:
                     async with p.acquire() as conn:
                         async with conn.cursor() as cursor:
                             await cursor.execute("SELECT 1")
-                # 3. Oracle (AsyncPool - Thin Mode)
+                # 3. SQL Server (aioodbc)
+                elif aioodbc is not None and isinstance(p, aioodbc.Pool):
+                    async with p.acquire() as conn:
+                        async with conn.cursor() as cursor:
+                            await cursor.execute("SELECT 1")
+                            await cursor.fetchone()
+                # 4. Oracle (AsyncPool - Thin Mode)
                 elif hasattr(p, 'acquire') and asyncio.iscoroutinefunction(p.acquire):
                     conn = await p.acquire()
                     async with conn:
