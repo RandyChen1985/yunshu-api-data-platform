@@ -2,6 +2,7 @@ from .base import DataSourceAdapter
 from .clickhouse import ClickHouseAdapter
 from .mysql import MySQLAdapter
 from .oracle import OracleAdapter
+from .sqlserver import SqlServerAdapter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ async def get_adapter(data_source_name: str = "default_clickhouse") -> DataSourc
         return MySQLAdapter(datasource.id)
     elif datasource.source_type == "oracle":
         return OracleAdapter(datasource.id)
+    elif datasource.source_type == "sqlserver":
+        return SqlServerAdapter(datasource.id)
     else:
         logger.error(f"Unsupported data source type: {datasource.source_type}")
         raise NotImplementedError(f"Adapter for {datasource.source_type} is not implemented.")

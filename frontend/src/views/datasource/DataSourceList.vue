@@ -26,7 +26,7 @@ import {
 const loading = ref(false)
 const datasources = ref<DataSource[]>([])
 const searchQuery = ref('')
-const typeFilter = ref<'ALL' | 'clickhouse' | 'mysql' | 'oracle'>('ALL')
+const typeFilter = ref<'ALL' | 'clickhouse' | 'mysql' | 'oracle' | 'sqlserver'>('ALL')
 const statusFilter = ref<'ALL' | '1' | '0'>('ALL')
 
 const showCreateDialog = ref(false)
@@ -453,6 +453,7 @@ onMounted(() => {
         <option value="clickhouse">ClickHouse</option>
         <option value="mysql">MySQL</option>
         <option value="oracle">Oracle</option>
+        <option value="sqlserver">SQL Server</option>
       </select>
       <select
         v-model="statusFilter"
@@ -716,6 +717,7 @@ onMounted(() => {
                   <option value="clickhouse">ClickHouse</option>
                   <option value="mysql">MySQL</option>
                   <option value="oracle">Oracle</option>
+        <option value="sqlserver">SQL Server</option>
                 </select>
               </div>
 

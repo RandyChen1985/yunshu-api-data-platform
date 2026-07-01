@@ -46,7 +46,7 @@
 | `/api/portal/lab/ai/*`    | `test_permission_system.py` | SQL 生成/校验/修改 (已验证角色权限继承) | ✅ 通过 | 2026-01-28   |
 | `/api/portal/management/roles/{id}/users` | `test_management_enhanced.py` | **角色成员批量分配、全量覆盖逻辑、缓存失效验证** | ✅ 通过 | 2026-03-13   |
 | `/api/portal/meta/*`      | `test_permission_system.py` | 数据源表结构元数据获取 (已验证角色权限) | ✅ 通过 | 2026-01-28   |
-| `/api/portal/datasource/*`| `test_datasource_sort.py`   | **数据源 CRUD、拖拽排序权重更新、连接测试** | ✅ 通过 | 2026-02-01   |
+| `/api/portal/datasource/*`| `test_datasource_sort.py`, `test_datasource_sqlserver.py` | **数据源 CRUD、排序、SQL Server 类型与连接测试（Mock）** | ✅ 通过 | 2026-07-01   |
 | `/api/portal/meta/v2/*`   | `test_meta_v2.py`           | **语义化元数据管理 (V2) CRUD (修复指标/关系编辑按钮缺失)、AI 智能发现指标、YAML 生成、血缘分析、导入表名过滤** | ✅ 通过 | 2026-03-17   |
 | `/api/portal/meta/resources/{key}/versions` | `test_resource_versions.py` | **资源版本历史、差异对比、回滚** | ✅ 通过 | 2026-07-01   |
 

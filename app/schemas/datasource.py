@@ -4,7 +4,7 @@ from datetime import datetime
 
 class DataSourceBase(BaseModel):
     source_name: str = Field(..., description="Data source unique name")
-    source_type: str = Field(..., description="Type: clickhouse, mysql, oracle")
+    source_type: str = Field(..., description="Type: clickhouse, mysql, oracle, sqlserver")
     host: str = Field(..., description="Database host")
     port: int = Field(..., description="Database port")
     database_name: Optional[str] = Field(
