@@ -65,6 +65,10 @@ async def update_resource(
             
         updated = await MetaService.update_resource(resource_key, update_data, operator=user)
         return updated
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to update resource: {e}")
         raise HTTPException(status_code=500, detail=str(e))

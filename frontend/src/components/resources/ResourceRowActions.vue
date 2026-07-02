@@ -90,6 +90,8 @@ onUnmounted(() => {
   window.removeEventListener('resize', onScrollOrResize)
 })
 
+const actionKind = computed(() => getSystemResourceActionKind(props.resource.resource_key))
+
 const onDeleteClick = () => {
   if (props.catalogStatus === 1) return
   emit('delete')

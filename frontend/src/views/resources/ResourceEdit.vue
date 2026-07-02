@@ -27,6 +27,7 @@ const showValidationBanner = ref(false)
 const hasSavedOnce = ref(false)
 const initialFormSnapshot = ref('')
 const pendingRouteNext = ref<((v?: boolean) => void) | null>(null)
+const catalogPublished = ref(false)
 
 const confirmDialog = ref({
   show: false,
@@ -119,6 +120,28 @@ const fetchResource = async () => {
     }
 }
 
+const fetchCatalogStatus = async () => {
+    if (!isEdit.value) {
+        catalogPublished.value = false
+        return
+    }
+    try {
+        const res = await axios.get('/api/portal/catalog/status-map')
+        catalogPublished.value = res.data?.[resourceKeyParam] === 1
+    } catch {
+        catalogPublished.value = false
+    }
+}
+
+const toggleResourceStatus = () => {
+    if (!hasPerm('element:resource:edit')) return
+    if (form.value.status === 1 && catalogPublished.value) {
+        showToast('该资源已上架到目录，请先从目录下架后再禁用', 'warning')
+        return
+    }
+    form.value.status = form.value.status === 1 ? 0 : 1
+}
+
 // Check for Imported Data
 onMounted(() => {
     checkRole()
@@ -126,6 +149,7 @@ onMounted(() => {
     fetchGroups()
     if (isEdit.value) {
         fetchResource().then(() => {
+            fetchCatalogStatus()
             if (route.query.tab === 'history') switchToHistoryTab()
         })
     } else {
@@ -1020,10 +1044,17 @@ const handleReady = (payload: any) => {
                 <div class="flex items-center space-x-6">
                     <div class="flex items-center">
                         <button 
-                            @click="hasPerm('element:resource:edit') && (form.status = form.status === 1 ? 0 : 1)" 
                             type="button"
-                            :class="[form.status === 1 ? 'bg-green-500' : 'bg-gray-200', !hasPerm('element:resource:edit') ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer']"
-                            class="relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                            :disabled="!hasPerm('element:resource:edit') || (form.status === 1 && catalogPublished)"
+                            :title="form.status === 1 && catalogPublished ? '已上架到目录，请先从目录下架后再禁用' : undefined"
+                            @click="toggleResourceStatus"
+                            :class="[
+                              'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
+                              form.status === 1 ? 'bg-green-500' : 'bg-gray-200',
+                              (!hasPerm('element:resource:edit') || (form.status === 1 && catalogPublished))
+                                ? 'opacity-50 cursor-not-allowed'
+                                : 'cursor-pointer',
+                            ]"
                         >
                             <span 
                             :class="form.status === 1 ? 'translate-x-5' : 'translate-x-0'"

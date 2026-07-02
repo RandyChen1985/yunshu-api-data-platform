@@ -51,6 +51,29 @@ const assignOwnerUserId = ref<number | null>(null)
 const assignOwnerOnlyEmpty = ref(true)
 const assignOwnerUsers = ref<{ id: number; user_name: string; remark?: string }[]>([])
 const productsWithoutOwner = ref(0)
+const catalogDraftCount = ref(0)
+const showDraftPublishModal = ref(false)
+const draftPublishPreview = ref<{
+  count: number
+  ready_count: number
+  items: {
+    product_key: string
+    display_name: string
+    domain?: string | null
+    owner_name?: string | null
+    ready: boolean
+    block_reason?: string | null
+  }[]
+} | null>(null)
+const draftPublishLoading = ref(false)
+const draftPublishConfirming = ref(false)
+
+type BatchConfirmAction = 'publish' | 'enable' | 'disable' | 'delete'
+const showBatchConfirmModal = ref(false)
+const batchConfirmAction = ref<BatchConfirmAction | null>(null)
+const batchConfirmItems = ref<{ resource_key: string; resource_name: string; hint?: string }[]>([])
+const batchConfirmSkipped = ref(0)
+const batchConfirmLoading = ref(false)
 const assigningOwner = ref(false)
 
 const canManageCatalog = computed(() => isAdmin.value || hasPerm('element:catalog:manage'))
@@ -324,11 +347,170 @@ const publishableKeys = (keys: string[]) =>
     )
   })
 
+const selectedPublishableCount = computed(() =>
+  publishableKeys(Array.from(selectedKeys.value)).length,
+)
+
+const editableKeys = (keys: string[]) =>
+  keys.filter((key) => {
+    const res = resources.value.find((r) => r.resource_key === key)
+    return res && !isLockedSystemResource(res)
+  })
+
+const enableTargetKeys = (keys: string[]) =>
+  editableKeys(keys).filter((key) => {
+    const res = resources.value.find((r) => r.resource_key === key)
+    return res && res.status !== 1
+  })
+
+const disableTargetKeys = (keys: string[]) =>
+  editableKeys(keys).filter((key) => {
+    const res = resources.value.find((r) => r.resource_key === key)
+    return res && res.status === 1 && !isCatalogPublished(key)
+  })
+
+const selectedEnableCount = computed(() =>
+  enableTargetKeys(Array.from(selectedKeys.value)).length,
+)
+const selectedDisableCount = computed(() =>
+  disableTargetKeys(Array.from(selectedKeys.value)).length,
+)
+
 const deletableKeys = (keys: string[]) =>
   keys.filter((key) => {
     const res = resources.value.find((r) => r.resource_key === key)
     return res && !isLockedSystemResource(res) && !isCatalogPublished(key)
   })
+
+const selectedDeletableCount = computed(() =>
+  deletableKeys(Array.from(selectedKeys.value)).length,
+)
+
+const getCatalogStatusHint = (key: string) => {
+  const s = catalogStatusMap.value[key]
+  if (s === 1) return '已上架'
+  if (s === 0) return '草稿'
+  if (s === 2) return '已下架'
+  return '未进目录'
+}
+
+const buildBatchConfirmItems = (
+  keys: string[],
+  hintFn?: (key: string, res: Resource) => string | undefined,
+) =>
+  keys.map((key) => {
+    const res = resources.value.find((r) => r.resource_key === key)!
+    return {
+      resource_key: key,
+      resource_name: res.resource_name || key,
+      hint: hintFn?.(key, res),
+    }
+  })
+
+const batchConfirmTitle = computed(() => {
+  switch (batchConfirmAction.value) {
+    case 'publish':
+      return '确认批量发布到目录'
+    case 'enable':
+      return '确认批量启用'
+    case 'disable':
+      return '确认批量禁用'
+    case 'delete':
+      return '确认批量删除'
+    default:
+      return '确认操作'
+  }
+})
+
+const batchConfirmSummary = computed(() => {
+  const count = batchConfirmItems.value.length
+  const skipped = batchConfirmSkipped.value
+  switch (batchConfirmAction.value) {
+    case 'publish':
+      return skipped > 0
+        ? `将发布 ${count} 个资源到数据产品目录，已跳过 ${skipped} 个已上架或系统资源。`
+        : `将发布 ${count} 个资源到数据产品目录。`
+    case 'enable':
+      return skipped > 0
+        ? `将启用 ${count} 个当前禁用的资源，已跳过 ${skipped} 个已启用或系统资源。`
+        : `将启用 ${count} 个当前禁用的资源。`
+    case 'disable':
+      return skipped > 0
+        ? `将禁用 ${count} 个当前启用的资源，禁用后对外 API 不可用；已跳过 ${skipped} 个已禁用、已上架或系统资源。`
+        : `将禁用 ${count} 个资源，禁用后对外 API 将不可用。`
+    case 'delete':
+      return skipped > 0
+        ? `将删除 ${count} 个资源，此操作不可撤销；已跳过 ${skipped} 个已上架或系统资源。`
+        : `将删除 ${count} 个资源，此操作不可撤销，相关 API 将立即停止对外服务。`
+    default:
+      return ''
+  }
+})
+
+const batchConfirmButtonClass = computed(() => {
+  switch (batchConfirmAction.value) {
+    case 'delete':
+      return 'bg-red-600 hover:bg-red-700'
+    case 'disable':
+      return 'bg-yellow-500 hover:bg-yellow-600'
+    case 'enable':
+      return 'bg-green-600 hover:bg-green-700'
+    default:
+      return 'bg-indigo-600 hover:bg-indigo-700'
+  }
+})
+
+const openBatchPublishConfirm = () => {
+  const all = Array.from(selectedKeys.value)
+  const keys = publishableKeys(all)
+  if (!keys.length) {
+    showToast('所选资源均已上架或为系统资源，无需发布', 'warning')
+    return
+  }
+  batchConfirmAction.value = 'publish'
+  batchConfirmSkipped.value = all.length - keys.length
+  batchConfirmItems.value = buildBatchConfirmItems(keys, (key) => getCatalogStatusHint(key))
+  showBatchConfirmModal.value = true
+}
+
+const openBatchEnableConfirm = () => {
+  const all = Array.from(selectedKeys.value)
+  const keys = enableTargetKeys(all)
+  if (!keys.length) {
+    showToast('所选资源均已启用或为系统资源', 'warning')
+    return
+  }
+  batchConfirmAction.value = 'enable'
+  batchConfirmSkipped.value = all.length - keys.length
+  batchConfirmItems.value = buildBatchConfirmItems(keys, (_key, res) => (res.status === 1 ? '已启用' : '已禁用'))
+  showBatchConfirmModal.value = true
+}
+
+const openBatchDisableConfirm = () => {
+  const all = Array.from(selectedKeys.value)
+  const keys = disableTargetKeys(all)
+  if (!keys.length) {
+    showToast('所选资源均已禁用或为系统资源', 'warning')
+    return
+  }
+  batchConfirmAction.value = 'disable'
+  batchConfirmSkipped.value = all.length - keys.length
+  batchConfirmItems.value = buildBatchConfirmItems(keys, (_key, res) => (res.status === 1 ? '已启用' : '已禁用'))
+  showBatchConfirmModal.value = true
+}
+
+const openBatchDeleteConfirm = () => {
+  const all = Array.from(selectedKeys.value)
+  const keys = deletableKeys(all)
+  if (!keys.length) {
+    showToast('所选资源均已上架到目录，请先下架后再删除', 'warning')
+    return
+  }
+  batchConfirmAction.value = 'delete'
+  batchConfirmSkipped.value = all.length - keys.length
+  batchConfirmItems.value = buildBatchConfirmItems(keys, (key) => getCatalogStatusHint(key))
+  showBatchConfirmModal.value = true
+}
 
 const confirmDeleteResource = (key: string) => {
   if (isCatalogPublished(key)) {
@@ -338,24 +520,8 @@ const confirmDeleteResource = (key: string) => {
   openDeleteModal([key])
 }
 
-const confirmBatchDelete = () => {
-  const keys = Array.from(selectedKeys.value)
-  const published = keys.filter(isCatalogPublished)
-  const allowed = deletableKeys(keys)
-  if (!allowed.length) {
-    showToast('所选资源均已上架到目录，请先下架后再删除', 'warning')
-    return
-  }
-  if (published.length) {
-    showToast(`已跳过 ${published.length} 个已上架资源`, 'warning')
-  }
-  openDeleteModal(allowed)
-}
-
-const executeDelete = async () => {
-  deleteLoading.value = true
+const runBatchDelete = async (keys: string[]) => {
   let successCount = 0
-  const keys = deletableKeys(deleteModalKeys.value)
   for (const key of keys) {
     try {
       await axios.delete(`/api/portal/meta/resources/${key}`)
@@ -367,21 +533,26 @@ const executeDelete = async () => {
   }
   showToast(`删除完成：成功 ${successCount}，失败 ${keys.length - successCount}`, successCount > 0 ? 'success' : 'warning')
   selectedKeys.value.clear()
+  fetchResources()
+  await fetchCatalogStatus()
+}
+
+const executeDelete = async () => {
+  deleteLoading.value = true
+  await runBatchDelete(deletableKeys(deleteModalKeys.value))
   showDeleteModal.value = false
   deleteModalKeys.value = []
   deleteLoading.value = false
-  fetchResources()
 }
 
-const batchUpdateStatus = async (status: number) => {
-  if (selectedKeys.value.size === 0) return
+const batchUpdateStatus = async (status: number, keys?: string[]) => {
+  const targetKeys = keys ?? (status === 1
+    ? enableTargetKeys(Array.from(selectedKeys.value))
+    : disableTargetKeys(Array.from(selectedKeys.value)))
+  if (!targetKeys.length) return
   loading.value = true
   let successCount = 0
-  const keys = Array.from(selectedKeys.value).filter((key) => {
-    const res = resources.value.find((r) => r.resource_key === key)
-    return res && !isLockedSystemResource(res)
-  })
-  for (const key of keys) {
+  for (const key of targetKeys) {
     try {
       await axios.put(`/api/portal/meta/resources/${key}`, { status })
       successCount++
@@ -389,20 +560,55 @@ const batchUpdateStatus = async (status: number) => {
       /* continue */
     }
   }
-  showToast(`批量更新：成功 ${successCount}，失败 ${keys.length - successCount}`, successCount > 0 ? 'success' : 'warning')
+  showToast(`批量更新：成功 ${successCount}，失败 ${targetKeys.length - successCount}`, successCount > 0 ? 'success' : 'warning')
   selectedKeys.value.clear()
   fetchResources()
+  loading.value = false
 }
 
-const requestBatchDisable = () => {
-  if (selectedKeys.value.size === 0) return
-  openConfirmDialog({
-    title: `确认禁用 ${selectedKeys.value.size} 个资源？`,
-    message: '禁用后这些资源的对外 API 将不可用。',
-    type: 'warning',
-    confirmText: '确认禁用',
-    onConfirm: () => batchUpdateStatus(0),
+const runBatchPublish = async (keys: string[]) => {
+  const res = await axios.post('/api/portal/catalog/products/batch-publish-from-resources', {
+    resource_keys: keys,
   })
+  batchPublishResult.value = res.data
+  if (res.data.skipped?.length) {
+    showBatchPublishModal.value = true
+  } else {
+    showToast(`已批量发布 ${res.data.published} 个产品`, 'success')
+  }
+  await fetchCatalogStatus()
+  selectedKeys.value.clear()
+}
+
+const confirmBatchAction = async () => {
+  if (!batchConfirmAction.value || !batchConfirmItems.value.length) return
+  batchConfirmLoading.value = true
+  const keys = batchConfirmItems.value.map((item) => item.resource_key)
+  try {
+    switch (batchConfirmAction.value) {
+      case 'publish':
+        await runBatchPublish(keys)
+        break
+      case 'enable':
+        await batchUpdateStatus(1, keys)
+        break
+      case 'disable':
+        await batchUpdateStatus(0, keys)
+        break
+      case 'delete':
+        await runBatchDelete(keys)
+        break
+    }
+    showBatchConfirmModal.value = false
+    batchConfirmAction.value = null
+    batchConfirmItems.value = []
+    batchConfirmSkipped.value = 0
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    showToast(err.response?.data?.detail || '操作失败', 'error')
+  } finally {
+    batchConfirmLoading.value = false
+  }
 }
 
 const applyStatusChange = async (resource: Resource, newStatus: number) => {
@@ -421,6 +627,10 @@ const applyStatusChange = async (resource: Resource, newStatus: number) => {
 const toggleStatus = (resource: Resource) => {
   if (isLockedSystemResource(resource) || !hasPerm('element:resource:edit')) return
   const newStatus = resource.status === 1 ? 0 : 1
+  if (newStatus === 0 && isCatalogPublished(resource.resource_key)) {
+    showToast('该资源已上架到目录，请先从目录下架后再禁用', 'warning')
+    return
+  }
   if (newStatus === 0) {
     openConfirmDialog({
       title: '确认禁用资源？',
@@ -449,6 +659,20 @@ const fetchCatalogStatus = async () => {
     catalogStatusMap.value = res.data
   } catch {
     catalogStatusMap.value = {}
+  }
+  await fetchDraftCount()
+}
+
+const fetchDraftCount = async () => {
+  if (!isAdmin.value) {
+    catalogDraftCount.value = 0
+    return
+  }
+  try {
+    const res = await axios.get('/api/portal/catalog/products/draft-count')
+    catalogDraftCount.value = res.data.count ?? 0
+  } catch {
+    catalogDraftCount.value = 0
   }
 }
 
@@ -501,34 +725,12 @@ const confirmUnpublishFromCatalog = async () => {
   }
 }
 
-const batchPublishSelected = async () => {
-  const keys = publishableKeys(Array.from(selectedKeys.value))
-  if (!keys.length) {
-    showToast('所选资源均已上架或为系统资源，无需发布', 'warning')
-    return
-  }
-  try {
-    const res = await axios.post('/api/portal/catalog/products/batch-publish-from-resources', {
-      resource_keys: keys,
-    })
-    batchPublishResult.value = res.data
-    if (res.data.skipped?.length) {
-      showBatchPublishModal.value = true
-    } else {
-      showToast(`已批量发布 ${res.data.published} 个产品`, 'success')
-    }
-    await fetchCatalogStatus()
-    selectedKeys.value.clear()
-  } catch (e: unknown) {
-    const err = e as { response?: { data?: { detail?: string } } }
-    showToast(err.response?.data?.detail || '批量发布失败', 'error')
-  }
-}
-
 const batchPublishAllDrafts = async () => {
   try {
     const res = await axios.post('/api/portal/catalog/products/batch-publish')
     batchPublishResult.value = res.data
+    showDraftPublishModal.value = false
+    draftPublishPreview.value = null
     if (res.data.skipped?.length || res.data.total === 0) {
       showBatchPublishModal.value = true
     } else {
@@ -538,6 +740,34 @@ const batchPublishAllDrafts = async () => {
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     showToast(err.response?.data?.detail || '批量上架草稿失败', 'error')
+  }
+}
+
+const openBatchPublishAllDraftsModal = async () => {
+  draftPublishLoading.value = true
+  try {
+    const res = await axios.get('/api/portal/catalog/products/draft-preview')
+    draftPublishPreview.value = res.data
+    if (!res.data.count) {
+      showToast('当前没有目录草稿', 'info')
+      await fetchDraftCount()
+      return
+    }
+    showDraftPublishModal.value = true
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    showToast(err.response?.data?.detail || '加载草稿列表失败', 'error')
+  } finally {
+    draftPublishLoading.value = false
+  }
+}
+
+const confirmBatchPublishAllDrafts = async () => {
+  draftPublishConfirming.value = true
+  try {
+    await batchPublishAllDrafts()
+  } finally {
+    draftPublishConfirming.value = false
   }
 }
 
@@ -795,12 +1025,18 @@ onMounted(() => {
               </button>
             </template>
             <button
-              v-if="isAdmin"
-              class="text-indigo-600 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-50 text-sm"
-              title="上架目录中全部草稿产品（与勾选无关）"
-              @click="batchPublishAllDrafts"
+              v-if="isAdmin && catalogDraftCount > 0"
+              class="text-indigo-600 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-50 text-sm relative disabled:opacity-50"
+              :disabled="draftPublishLoading"
+              :title="`上架目录中 ${catalogDraftCount} 个草稿产品（与勾选无关）`"
+              @click="openBatchPublishAllDraftsModal"
             >
-              上架全部草稿
+              {{ draftPublishLoading ? '加载中...' : '上架全部草稿' }}
+              <span
+                class="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-indigo-500 text-white text-[10px] leading-4 text-center"
+              >
+                {{ catalogDraftCount > 99 ? '99+' : catalogDraftCount }}
+              </span>
             </button>
             <button
               v-if="canManageCatalog"
@@ -838,21 +1074,38 @@ onMounted(() => {
             <button
               v-if="canPublishToCatalog"
               class="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="!publishableKeys(Array.from(selectedKeys)).length"
-              :title="!publishableKeys(Array.from(selectedKeys)).length ? '所选资源均已上架或为系统资源' : '发布未进目录、草稿或已下架的资源到目录'"
-              @click="batchPublishSelected"
+              :disabled="selectedPublishableCount === 0"
+              :title="selectedPublishableCount === 0 ? '所选资源均已上架或为系统资源' : `将发布 ${selectedPublishableCount} 个未上架资源`"
+              @click="openBatchPublishConfirm"
             >
-              批量发布目录
+              批量发布目录 ({{ selectedPublishableCount }})
             </button>
-            <button class="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200" @click="batchUpdateStatus(1)">批量启用</button>
-            <button class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300" @click="requestBatchDisable">批量禁用</button>
             <button
-              class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="!deletableKeys(Array.from(selectedKeys)).length"
-              :title="!deletableKeys(Array.from(selectedKeys)).length ? '所选资源均已上架到目录，请先下架' : undefined"
-              @click="confirmBatchDelete"
+              v-if="hasPerm('element:resource:edit')"
+              class="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="selectedEnableCount === 0"
+              :title="selectedEnableCount === 0 ? '所选资源均已启用或为系统资源' : `将启用 ${selectedEnableCount} 个当前禁用的资源`"
+              @click="openBatchEnableConfirm"
             >
-              批量删除
+              批量启用 ({{ selectedEnableCount }})
+            </button>
+            <button
+              v-if="hasPerm('element:resource:edit')"
+              class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="selectedDisableCount === 0"
+              :title="selectedDisableCount === 0 ? '所选资源均已禁用、已上架或为系统资源' : `将禁用 ${selectedDisableCount} 个当前启用的资源`"
+              @click="openBatchDisableConfirm"
+            >
+              批量禁用 ({{ selectedDisableCount }})
+            </button>
+            <button
+              v-if="hasPerm('element:resource:delete')"
+              class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="selectedDeletableCount === 0"
+              :title="selectedDeletableCount === 0 ? '所选资源均已上架到目录，请先下架' : `将删除 ${selectedDeletableCount} 个资源`"
+              @click="openBatchDeleteConfirm"
+            >
+              批量删除 ({{ selectedDeletableCount }})
             </button>
             <button class="text-xs text-blue-500 underline ml-2" @click="selectedKeys.clear()">取消</button>
           </div>
@@ -1009,10 +1262,15 @@ onMounted(() => {
                   </td>
                   <td class="px-3 py-3 whitespace-nowrap" @click.stop>
                     <button
-                      :disabled="isLockedSystemResource(res) || !hasPerm('element:resource:edit')"
+                      :disabled="isLockedSystemResource(res) || !hasPerm('element:resource:edit') || (res.status === 1 && isCatalogPublished(res.resource_key))"
                       class="relative inline-flex h-5 w-10 rounded-full transition-colors"
-                      :class="[res.status === 1 ? 'bg-green-500' : 'bg-gray-300', (isLockedSystemResource(res) || !hasPerm('element:resource:edit')) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer']"
-                      :aria-label="res.status === 1 ? '已启用' : '已禁用'"
+                      :class="[
+                        res.status === 1 ? 'bg-green-500' : 'bg-gray-300',
+                        (isLockedSystemResource(res) || !hasPerm('element:resource:edit') || (res.status === 1 && isCatalogPublished(res.resource_key)))
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer',
+                      ]"
+                      :title="res.status === 1 && isCatalogPublished(res.resource_key) ? '已上架到目录，请先从目录下架后再禁用' : (res.status === 1 ? '已启用' : '已禁用')"
                       @click="toggleStatus(res)"
                     >
                       <span class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition" :class="res.status === 1 ? 'translate-x-5' : 'translate-x-0.5'" />
@@ -1196,6 +1454,107 @@ onMounted(() => {
               @click="confirmUnpublishFromCatalog"
             >
               {{ unpublishing ? '下架中...' : '确认下架' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch action confirm -->
+      <div v-if="showBatchConfirmModal && batchConfirmAction" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="!batchConfirmLoading && (showBatchConfirmModal = false)" />
+        <div class="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] flex flex-col">
+          <h3 class="text-lg font-semibold text-gray-900">{{ batchConfirmTitle }}</h3>
+          <p class="text-sm text-gray-500 mt-2">{{ batchConfirmSummary }}</p>
+          <div class="mt-4 flex-1 min-h-0 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-100">
+            <div
+              v-for="item in batchConfirmItems"
+              :key="item.resource_key"
+              class="px-3 py-2.5 text-sm"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="font-medium text-gray-900 truncate">{{ item.resource_name }}</p>
+                  <p class="text-xs text-gray-500 font-mono truncate mt-0.5">{{ item.resource_key }}</p>
+                </div>
+                <span v-if="item.hint" class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                  {{ item.hint }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-5 flex justify-end gap-2 pt-2">
+            <button
+              class="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+              :disabled="batchConfirmLoading"
+              @click="showBatchConfirmModal = false"
+            >
+              取消
+            </button>
+            <button
+              class="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50"
+              :class="batchConfirmButtonClass"
+              :disabled="batchConfirmLoading"
+              @click="confirmBatchAction"
+            >
+              {{ batchConfirmLoading ? '处理中...' : `确认 (${batchConfirmItems.length})` }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Draft publish confirm -->
+      <div v-if="showDraftPublishModal && draftPublishPreview" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="!draftPublishConfirming && (showDraftPublishModal = false)" />
+        <div class="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] flex flex-col">
+          <h3 class="text-lg font-semibold text-gray-900">确认上架全部草稿</h3>
+          <p class="text-sm text-gray-500 mt-2">
+            共 <strong class="text-gray-800">{{ draftPublishPreview.count }}</strong> 个草稿，
+            其中 <strong class="text-green-600">{{ draftPublishPreview.ready_count }}</strong> 个信息完整可上架
+            <template v-if="draftPublishPreview.count > draftPublishPreview.ready_count">
+              ，<strong class="text-amber-600">{{ draftPublishPreview.count - draftPublishPreview.ready_count }}</strong> 个可能因信息不全被跳过
+            </template>
+          </p>
+          <div class="mt-4 flex-1 min-h-0 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-100">
+            <div
+              v-for="item in draftPublishPreview.items"
+              :key="item.product_key"
+              class="px-3 py-2.5 text-sm"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="font-medium text-gray-900 truncate">{{ item.display_name }}</p>
+                  <p class="text-xs text-gray-500 font-mono truncate mt-0.5">{{ item.product_key }}</p>
+                  <p class="text-xs text-gray-400 mt-0.5">
+                    {{ item.domain || '默认域' }}
+                    <span v-if="item.owner_name"> · 负责人 {{ item.owner_name }}</span>
+                  </p>
+                  <p v-if="!item.ready && item.block_reason" class="text-xs text-amber-700 mt-1">
+                    {{ item.block_reason }}
+                  </p>
+                </div>
+                <span
+                  class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium"
+                  :class="item.ready ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'"
+                >
+                  {{ item.ready ? '可上架' : '需补全' }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-5 flex justify-end gap-2 pt-2">
+            <button
+              class="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+              :disabled="draftPublishConfirming"
+              @click="showDraftPublishModal = false"
+            >
+              取消
+            </button>
+            <button
+              class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              :disabled="draftPublishConfirming || draftPublishPreview.ready_count === 0"
+              @click="confirmBatchPublishAllDrafts"
+            >
+              {{ draftPublishConfirming ? '上架中...' : `确认上架 (${draftPublishPreview.ready_count})` }}
             </button>
           </div>
         </div>

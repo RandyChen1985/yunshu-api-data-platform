@@ -883,6 +883,22 @@ class CatalogService:
         raise ValueError(f"资源已上架至目录产品（{'、'.join(labels)}{suffix}），请先从目录下架后再删除")
 
     @classmethod
+    async def assert_resource_disableable(cls, resource_key: str) -> None:
+        products = await cls.list_published_products_for_resource(resource_key)
+        if not products:
+            return
+        if len(products) == 1:
+            p = products[0]
+            name = (p.get("display_name") or p["product_key"]).strip()
+            raise ValueError(f"资源已上架至目录产品「{name}」，请先从目录下架后再禁用")
+        labels = [
+            (p.get("display_name") or p["product_key"]).strip()
+            for p in products[:3]
+        ]
+        suffix = f"等 {len(products)} 个" if len(products) > 3 else ""
+        raise ValueError(f"资源已上架至目录产品（{'、'.join(labels)}{suffix}），请先从目录下架后再禁用")
+
+    @classmethod
     def _validate_publishable_row(cls, row: Dict[str, Any]) -> None:
         if not (row.get("display_name") or "").strip():
             raise ValueError("发布前须填写产品展示名称")
@@ -1157,6 +1173,44 @@ class CatalogService:
                 )
                 row = await cursor.fetchone()
         return int(row[0] or 0) if row else 0
+
+    @classmethod
+    async def count_draft_products(cls) -> int:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT COUNT(*) FROM data_products WHERE status = %s",
+                    (STATUS_DRAFT,),
+                )
+                row = await cursor.fetchone()
+        return int(row[0] or 0) if row else 0
+
+    @classmethod
+    async def get_draft_preview(cls) -> Dict[str, Any]:
+        rows = await cls._fetch_product_rows(status=STATUS_DRAFT)
+        items: List[Dict[str, Any]] = []
+        ready_count = 0
+        for row in rows:
+            block_reason: Optional[str] = None
+            ready = True
+            try:
+                cls._validate_publishable_row(row)
+            except ValueError as e:
+                ready = False
+                block_reason = str(e)
+            if ready:
+                ready_count += 1
+            items.append(
+                {
+                    "product_key": row["product_key"],
+                    "display_name": (row.get("display_name") or row["product_key"]).strip(),
+                    "domain": row.get("domain"),
+                    "owner_name": row.get("owner_name"),
+                    "ready": ready,
+                    "block_reason": block_reason,
+                }
+            )
+        return {"count": len(items), "ready_count": ready_count, "items": items}
 
     @classmethod
     async def batch_assign_owner(

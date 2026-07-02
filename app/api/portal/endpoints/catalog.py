@@ -17,6 +17,7 @@ from app.schemas.catalog import (
     AccessRequestItem,
     BatchPublishResult,
     BatchPublishFromResourcesRequest,
+    DraftPreviewResponse,
     BatchAssignOwnerRequest,
     BatchAssignOwnerResult,
     PaginatedProductList,
@@ -191,6 +192,16 @@ async def count_products_without_owner(user: dict = Depends(require_api_key)):
     if not _can_manage_catalog(user):
         raise HTTPException(status_code=403, detail="无权限")
     return {"count": await CatalogService.count_products_without_owner()}
+
+
+@router.get("/products/draft-count")
+async def count_draft_products(user: dict = Depends(require_admin)):
+    return {"count": await CatalogService.count_draft_products()}
+
+
+@router.get("/products/draft-preview", response_model=DraftPreviewResponse)
+async def preview_draft_products(user: dict = Depends(require_admin)):
+    return await CatalogService.get_draft_preview()
 
 
 @router.post("/products/batch-assign-owner", response_model=BatchAssignOwnerResult)

@@ -123,6 +123,15 @@ async def test_delete_resource_blocked_when_catalog_published(client: AsyncClien
     assert blocked.status_code == 400
     assert "下架" in blocked.json()["detail"]
 
+    disable_blocked = await client.put(
+        f"/api/portal/meta/resources/{resource_key}",
+        headers=admin_headers,
+        json={"status": 0},
+    )
+    assert disable_blocked.status_code == 400
+    assert "下架" in disable_blocked.json()["detail"]
+    assert "禁用" in disable_blocked.json()["detail"]
+
     status_map = await client.get("/api/portal/catalog/status-map", headers=admin_headers)
     assert status_map.status_code == 200
     assert status_map.json().get(resource_key) == 1
@@ -194,6 +203,29 @@ async def test_batch_publish_from_resources_selected(client: AsyncClient, admin_
             json={"revoke_permissions": False},
         )
         await client.delete(f"/api/portal/meta/resources/{key}", headers=admin_headers)
+
+
+@pytest.mark.asyncio
+async def test_catalog_draft_count(client: AsyncClient, admin_headers: dict):
+    response = await client.get("/api/portal/catalog/products/draft-count", headers=admin_headers)
+    assert response.status_code == 200
+    assert "count" in response.json()
+    assert isinstance(response.json()["count"], int)
+
+
+@pytest.mark.asyncio
+async def test_catalog_draft_preview(client: AsyncClient, admin_headers: dict):
+    response = await client.get("/api/portal/catalog/products/draft-preview", headers=admin_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert "count" in data
+    assert "ready_count" in data
+    assert "items" in data
+    assert data["ready_count"] <= data["count"]
+    for item in data["items"]:
+        assert "product_key" in item
+        assert "display_name" in item
+        assert "ready" in item
 
 
 @pytest.mark.asyncio
