@@ -165,6 +165,25 @@ def test_build_sqlserver_dsn_encrypt_enabled():
     assert "TrustServerCertificate" not in dsn
 
 
+def test_build_sqlserver_dsn_uses_2014_compat_mode_defaults():
+    from types import SimpleNamespace
+    from app.services.pool_manager import DataSourcePoolManager
+
+    ds = SimpleNamespace(
+        host="sql2014.example.com",
+        port=1433,
+        database_name="legacy",
+        username="sa",
+        password="secret",
+        extra_params={"compat_mode": "sqlserver_2014"},
+    )
+    with patch("app.services.pool_manager.aioodbc", MagicMock()):
+        dsn = DataSourcePoolManager._build_sqlserver_dsn(ds)
+    assert "DRIVER={ODBC Driver 17 for SQL Server}" in dsn
+    assert "Encrypt=no" in dsn
+    assert "TrustServerCertificate=yes" in dsn
+
+
 def test_build_sqlserver_dsn_parses_string_booleans():
     from types import SimpleNamespace
     from app.services.pool_manager import DataSourcePoolManager

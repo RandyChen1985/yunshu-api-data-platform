@@ -202,10 +202,20 @@ class DataSourcePoolManager:
             extra = {}
         extra = extra or {}
 
-        driver = extra.get("odbc_driver") or "ODBC Driver 18 for SQL Server"
-        trust = DataSourcePoolManager._json_bool(extra.get("trust_server_certificate"), True)
+        compat_mode = str(extra.get("compat_mode") or "modern")
+        if compat_mode == "sqlserver_2014":
+            default_driver = "ODBC Driver 17 for SQL Server"
+            default_trust = True
+            default_encrypt = False
+        else:
+            default_driver = "ODBC Driver 18 for SQL Server"
+            default_trust = True
+            default_encrypt = False
+
+        driver = extra.get("odbc_driver") or default_driver
+        trust = DataSourcePoolManager._json_bool(extra.get("trust_server_certificate"), default_trust)
         # Driver 18 默认 Encrypt=yes，旧版 SQL Server 常因 TLS 不兼容报 unsupported protocol
-        encrypt = DataSourcePoolManager._json_bool(extra.get("encrypt"), False)
+        encrypt = DataSourcePoolManager._json_bool(extra.get("encrypt"), default_encrypt)
         host = datasource.host
         port = int(datasource.port or 1433)
         server = f"{host},{port}" if port else host
