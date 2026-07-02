@@ -172,6 +172,10 @@ class MetaService:
 
         if 'resource_group' in update_dict:
             cls._assert_assignable_resource_group(update_dict['resource_group'], resource_key)
+        if update_dict.get('status') == 0 and existing.status != 0:
+            from app.services.catalog_service import CatalogService
+
+            await CatalogService.assert_resource_disableable(resource_key)
         set_clauses = []; values = []
         for k, v in update_dict.items():
             if k in ('fields_config', 'allowed_filters'): v = json.dumps(v)
@@ -238,6 +242,9 @@ class MetaService:
 
     @classmethod
     async def delete_resource(cls, resource_key: str) -> bool:
+        from app.services.catalog_service import CatalogService
+
+        await CatalogService.assert_resource_deletable(resource_key)
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("DELETE FROM sys_resource_meta WHERE resource_key = %s", (resource_key,))

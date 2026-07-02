@@ -133,6 +133,25 @@ class BatchPublishResult(BaseModel):
     total: int = 0
 
 
+class BatchPublishFromResourcesRequest(BaseModel):
+    resource_keys: List[str] = Field(..., min_length=1)
+
+
+class DraftProductPreviewItem(BaseModel):
+    product_key: str
+    display_name: str
+    domain: Optional[str] = None
+    owner_name: Optional[str] = None
+    ready: bool = True
+    block_reason: Optional[str] = None
+
+
+class DraftPreviewResponse(BaseModel):
+    count: int
+    ready_count: int
+    items: List[DraftProductPreviewItem] = Field(default_factory=list)
+
+
 class BatchAssignOwnerRequest(BaseModel):
     owner_user_id: int
     product_keys: Optional[List[str]] = None

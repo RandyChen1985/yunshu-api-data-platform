@@ -16,6 +16,8 @@ from app.schemas.catalog import (
     AccessRequestHandle,
     AccessRequestItem,
     BatchPublishResult,
+    BatchPublishFromResourcesRequest,
+    DraftPreviewResponse,
     BatchAssignOwnerRequest,
     BatchAssignOwnerResult,
     PaginatedProductList,
@@ -157,9 +159,25 @@ async def batch_publish_all_drafts(
     request_in: Request,
     user: dict = Depends(require_admin),
 ):
-    """批量发布所有草稿产品（初始化后一键上架）"""
+    """批量发布目录中全部草稿产品（管理员）"""
     request_in.state.action_type = "CATALOG_BATCH_PUBLISH"
     return await CatalogService.batch_publish_drafts()
+
+
+@router.post("/products/batch-publish-from-resources", response_model=BatchPublishResult)
+async def batch_publish_from_resources(
+    request_in: Request,
+    body: BatchPublishFromResourcesRequest,
+    user: dict = Depends(require_api_key),
+):
+    """批量将所选资源发布到目录（未进目录 / 草稿 / 已下架）"""
+    request_in.state.action_type = "CATALOG_BATCH_PUBLISH"
+    if not _can_publish(user):
+        raise HTTPException(status_code=403, detail="无发布权限")
+    try:
+        return await CatalogService.batch_publish_from_resources(body.resource_keys, user=user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/assign-owner-users")
@@ -174,6 +192,16 @@ async def count_products_without_owner(user: dict = Depends(require_api_key)):
     if not _can_manage_catalog(user):
         raise HTTPException(status_code=403, detail="无权限")
     return {"count": await CatalogService.count_products_without_owner()}
+
+
+@router.get("/products/draft-count")
+async def count_draft_products(user: dict = Depends(require_admin)):
+    return {"count": await CatalogService.count_draft_products()}
+
+
+@router.get("/products/draft-preview", response_model=DraftPreviewResponse)
+async def preview_draft_products(user: dict = Depends(require_admin)):
+    return await CatalogService.get_draft_preview()
 
 
 @router.post("/products/batch-assign-owner", response_model=BatchAssignOwnerResult)
