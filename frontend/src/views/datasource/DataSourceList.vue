@@ -35,6 +35,7 @@ const showTestDialog = ref(false)
 const testingItem = ref<DataSource | null>(null)
 
 type SqlServerExtraParams = {
+  compat_mode: 'modern' | 'sqlserver_2014'
   encrypt: boolean
   trust_server_certificate: boolean
   odbc_driver: string
@@ -54,6 +55,7 @@ type DataSourceForm = {
 }
 
 const DEFAULT_SQLSERVER_EXTRA_PARAMS: SqlServerExtraParams = {
+  compat_mode: 'modern',
   encrypt: false,
   trust_server_certificate: true,
   odbc_driver: 'ODBC Driver 18 for SQL Server',
@@ -72,6 +74,11 @@ const booleanParam = (value: unknown, fallback: boolean): boolean => {
 }
 
 const normalizeSqlServerExtraParams = (value?: Record<string, unknown> | null): SqlServerExtraParams => ({
+  compat_mode:
+    value?.compat_mode === 'sqlserver_2014' ||
+    (typeof value?.odbc_driver === 'string' && value.odbc_driver.includes('ODBC Driver 17'))
+      ? 'sqlserver_2014'
+      : 'modern',
   encrypt: booleanParam(value?.encrypt, DEFAULT_SQLSERVER_EXTRA_PARAMS.encrypt),
   trust_server_certificate: booleanParam(
     value?.trust_server_certificate,
@@ -300,6 +307,19 @@ const updatePort = () => {
 
 const useSqlServerDriver = (driver: string) => {
   formData.value.extra_params.odbc_driver = driver
+  formData.value.extra_params.compat_mode = driver === SQLSERVER_DRIVER_17 ? 'sqlserver_2014' : 'modern'
+}
+
+const applySqlServerCompatMode = () => {
+  if (formData.value.extra_params.compat_mode === 'sqlserver_2014') {
+    formData.value.extra_params.odbc_driver = SQLSERVER_DRIVER_17
+    formData.value.extra_params.encrypt = false
+    formData.value.extra_params.trust_server_certificate = true
+  } else {
+    formData.value.extra_params.odbc_driver = SQLSERVER_DRIVER_18
+    formData.value.extra_params.encrypt = false
+    formData.value.extra_params.trust_server_certificate = true
+  }
 }
 
 const saveDataSource = async () => {
@@ -923,6 +943,21 @@ onMounted(() => {
                     <p class="text-sm font-medium text-gray-800">SQL Server 高级连接参数</p>
                     <p class="text-xs text-gray-500 mt-0.5">用于 ODBC Driver、TLS 与证书兼容配置</p>
                   </div>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">兼容模式</label>
+                  <select
+                    v-model="formData.extra_params.compat_mode"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    @change="applySqlServerCompatMode"
+                  >
+                    <option value="modern">现代模式（SQL Server 2016+ / 默认）</option>
+                    <option value="sqlserver_2014">SQL Server 2014 / 2012 兼容模式</option>
+                  </select>
+                  <p v-if="formData.extra_params.compat_mode === 'sqlserver_2014'" class="text-xs text-amber-600 mt-1">
+                    将使用 ODBC Driver 17、关闭 Encrypt 并信任服务端证书；运行环境需安装 ODBC Driver 17。
+                  </p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
