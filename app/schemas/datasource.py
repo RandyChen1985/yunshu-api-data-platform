@@ -77,6 +77,28 @@ class DbProfileTaskResponse(BaseModel):
         from_attributes = True
 
 
+class DbTableProfileSummaryResponse(BaseModel):
+    id: int
+    connection_id: int
+    table_name: str
+    table_type: str
+    ai_term: Optional[str] = None
+    ai_description: Optional[str] = None
+    ai_tags: Optional[List[str]] = None
+    status: int
+    error_message: Optional[str] = None
+    confidence_score: int = 100
+    is_temporary: int = 0
+    is_ignored: int = 0
+    confidence_reason: Optional[str] = None
+    columns_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class DbTableProfileResponse(BaseModel):
     id: int
     connection_id: int

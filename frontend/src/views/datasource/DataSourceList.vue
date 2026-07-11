@@ -539,6 +539,30 @@ const copyConnectionHint = async (item: DataSource) => {
 const profilingTasks = ref<Record<number, { status: number; total_tables: number; processed_tables: number; current_table?: string; error_message?: string }>>({})
 const pollingIntervals = reactive<Record<number, any>>({})
 
+const isProfilingCancelled = (task?: { status?: number; error_message?: string }) => {
+  return task?.status === 3 && (task?.error_message || '').startsWith('用户主动取消')
+}
+
+const profilingProgressPercent = (task?: { processed_tables?: number; total_tables?: number }) => {
+  const total = task?.total_tables || 1
+  const done = task?.processed_tables || 0
+  return Math.min(100, Math.round((done / total) * 100))
+}
+
+const profilingStatusLabel = (task?: { status?: number; error_message?: string }) => {
+  if (!task) return ''
+  if (task.status === 2) return '摸排完成'
+  if (isProfilingCancelled(task)) return '已取消'
+  if (task.status === 3) return '摸排异常'
+  return ''
+}
+
+const profilingFinishedToast = (task: { status: number; error_message?: string }) => {
+  if (task.status === 2) return { message: '数据源摸排完成！', type: 'success' as const }
+  if (isProfilingCancelled(task)) return { message: '摸排已取消，已完成表保留', type: 'warning' as const }
+  return { message: '摸排异常结束', type: 'error' as const }
+}
+
 const loadTaskStatuses = async () => {
   for (const item of datasources.value) {
     try {
@@ -565,7 +589,8 @@ const startPolling = (configId: number) => {
         if (res.data.status !== 1) {
           clearInterval(pollingIntervals[configId])
           delete pollingIntervals[configId]
-          showToast(`数据源摸排完成！`, 'success')
+          const toast = profilingFinishedToast(res.data)
+          showToast(toast.message, toast.type)
         }
       } else {
         clearInterval(pollingIntervals[configId])
@@ -591,14 +616,63 @@ const requestProfiling = (item: DataSource) => {
   })
 }
 
-const triggerProfiling = async (item: DataSource) => {
+const triggerProfiling = async (item: DataSource, force = false) => {
   try {
-    const res = await axios.post(`/api/portal/datasource/datasources/${item.id}/profile`)
-    showToast('已提交后台分析摸排任务，串行处理大模型分析中', 'success')
+    const res = await axios.post(`/api/portal/datasource/datasources/${item.id}/profile`, null, {
+      params: { force },
+    })
+    showToast(
+      force ? '已提交全量重跑摸排任务，将全部表重新分析' : '已提交后台分析摸排任务，串行处理大模型分析中',
+      'success'
+    )
     profilingTasks.value[item.id] = res.data
     startPolling(item.id)
   } catch (e: any) {
-    showToast(e.response?.data?.detail || '启动摸排失败', 'error')
+    showToast(e.response?.data?.detail || (force ? '全量重跑失败' : '启动摸排失败'), 'error')
+  }
+}
+
+const hasProfilingHistory = (item: DataSource) => {
+  const task = profilingTasks.value[item.id]
+  if (!task || task.status === 1) return false
+  return task.status === 2 || task.status === 3 || (task.processed_tables || 0) > 0
+}
+
+const requestForceProfiling = (item: DataSource) => {
+  const total = profilingTasks.value[item.id]?.total_tables
+  const totalHint = total ? `${total} 张` : '所有'
+  openConfirm({
+    title: '确认全量重跑摸排',
+    message: `将对数据源 “${item.source_name}” 下 ${totalHint} 表/视图重新摸排。已完成的画像将被覆盖，每张表都会重新调用大模型，将显著消耗 Token 和时间。此操作不可撤销，确认全量重跑吗？`,
+    type: 'danger',
+    confirmText: '确认全量重跑',
+    onConfirm: () => {
+      confirmDialog.value.show = false
+      triggerProfiling(item, true)
+    }
+  })
+}
+
+const requestCancelProfiling = (item: DataSource) => {
+  openConfirm({
+    title: '确认停止摸排',
+    message: `将停止数据源 “${item.source_name}” 的摸排任务。当前正在处理的表会完成后停止，已成功摸排的表会保留。确认停止吗？`,
+    type: 'warning',
+    confirmText: '确认停止',
+    onConfirm: () => {
+      confirmDialog.value.show = false
+      cancelProfiling(item)
+    }
+  })
+}
+
+const cancelProfiling = async (item: DataSource) => {
+  try {
+    const res = await axios.post(`/api/portal/datasource/datasources/${item.id}/profile/cancel`)
+    profilingTasks.value[item.id] = res.data
+    showToast('已请求停止摸排，当前表处理完成后生效', 'warning')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '停止摸排失败', 'error')
   }
 }
 
@@ -610,6 +684,7 @@ const profilesSearchQuery = ref('')
 const selectedProfileTag = ref<string | null>(null)
 const isTagsExpanded = ref(false)
 const expandedTables = ref<Record<string, boolean>>({})
+const loadingProfileDetails = ref<Record<string, boolean>>({})
 
 const openTableProfiles = async (item: DataSource) => {
   showProfilesTarget.value = item
@@ -619,13 +694,37 @@ const openTableProfiles = async (item: DataSource) => {
   selectedProfileTag.value = null
   isTagsExpanded.value = false
   expandedTables.value = {}
+  loadingProfileDetails.value = {}
   try {
-    const res = await axios.get(`/api/portal/datasource/datasources/${item.id}/table-profiles`)
+    const res = await axios.get(`/api/portal/datasource/datasources/${item.id}/table-profiles`, {
+      params: { summary: true },
+    })
     viewTableProfiles.value = res.data || []
   } catch {
     showToast('获取摸排结果失败', 'error')
   } finally {
     loadingViewProfiles.value = false
+  }
+}
+
+const loadProfileDetail = async (tableName: string) => {
+  if (!showProfilesTarget.value || loadingProfileDetails.value[tableName]) return
+  const existing = viewTableProfiles.value.find((p: any) => p.table_name === tableName)
+  if (existing?.columns_profile?.length || existing?.ddl) return
+
+  loadingProfileDetails.value[tableName] = true
+  try {
+    const res = await axios.get(
+      `/api/portal/datasource/datasources/${showProfilesTarget.value.id}/table-profiles/${encodeURIComponent(tableName)}`
+    )
+    const idx = viewTableProfiles.value.findIndex((p: any) => p.table_name === tableName)
+    if (idx >= 0) {
+      viewTableProfiles.value[idx] = { ...viewTableProfiles.value[idx], ...res.data }
+    }
+  } catch {
+    showToast(`加载表 [${tableName}] 画像详情失败`, 'error')
+  } finally {
+    loadingProfileDetails.value[tableName] = false
   }
 }
 
@@ -636,6 +735,9 @@ const closeTableProfiles = () => {
 
 const toggleTableExpand = (tableName: string) => {
   expandedTables.value[tableName] = !expandedTables.value[tableName]
+  if (expandedTables.value[tableName]) {
+    loadProfileDetail(tableName)
+  }
 }
 
 const toggleProfileTag = (tag: string) => {
@@ -874,13 +976,14 @@ onUnmounted(() => {
                     <span v-if="profilingTasks[item.id] && profilingTasks[item.id]?.status !== 1" class="inline-flex items-center text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-all shrink-0"
                           :class="[
                             profilingTasks[item.id]?.status === 2 ? 'bg-green-50 text-green-600 border border-green-100' : '',
-                            profilingTasks[item.id]?.status === 3 ? 'bg-red-50 text-red-600 border border-red-100' : '',
+                            isProfilingCancelled(profilingTasks[item.id]) ? 'bg-amber-50 text-amber-600 border border-amber-100' : '',
+                            profilingTasks[item.id]?.status === 3 && !isProfilingCancelled(profilingTasks[item.id]) ? 'bg-red-50 text-red-600 border border-red-100' : '',
                           ]">
                       <template v-if="profilingTasks[item.id]?.status === 2">
                         摸排完成
                       </template>
                       <template v-else-if="profilingTasks[item.id]?.status === 3" :title="profilingTasks[item.id]?.error_message">
-                        摸排异常
+                        {{ profilingStatusLabel(profilingTasks[item.id]) }}
                       </template>
                     </span>
                   </div>
@@ -955,6 +1058,16 @@ onUnmounted(() => {
                           v-if="openMore === item.id"
                           class="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-lg shadow-xl z-50 py-1 overflow-hidden"
                         >
+                          <!-- 摸排进行中：停止 -->
+                          <button
+                            v-if="profilingTasks[item.id]?.status === 1"
+                            type="button"
+                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-50 transition-colors"
+                            @click="requestCancelProfiling(item); openMore = null"
+                          >
+                            <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
+                            停止摸排
+                          </button>
                           <!-- 摸排 -->
                           <button
                             type="button"
@@ -965,6 +1078,16 @@ onUnmounted(() => {
                           >
                             <CircleStackIcon class="w-3.5 h-3.5 shrink-0" :class="profilingTasks[item.id]?.status === 1 ? 'animate-spin' : ''" />
                             {{ profilingTasks[item.id]?.status === 1 ? '摸排中...' : '启动摸排' }}
+                          </button>
+                          <!-- 全量重跑（已有摸排记录且非进行中时显示） -->
+                          <button
+                            v-if="hasProfilingHistory(item)"
+                            type="button"
+                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                            @click="requestForceProfiling(item); openMore = null"
+                          >
+                            <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
+                            全量重跑
                           </button>
                           <!-- 画像（仅摸排完成/异常时显示） -->
                           <button
@@ -999,8 +1122,17 @@ onUnmounted(() => {
                       <span v-if="!canEdit" class="text-xs text-gray-400">只读</span>
                     </div>
                     <!-- 摸排进行中进度 -->
-                    <div v-if="profilingTasks[item.id]?.status === 1" class="text-[10px] text-blue-500 font-mono font-medium animate-pulse mt-0.5 max-w-[280px] truncate" :title="`正在分析表: ${profilingTasks[item.id]?.current_table}`">
-                      摸排中 {{ Math.round(((profilingTasks[item.id]?.processed_tables || 0) / (profilingTasks[item.id]?.total_tables || 1)) * 100) }}% · {{ profilingTasks[item.id]?.current_table || '等待中...' }}
+                    <div v-if="profilingTasks[item.id]?.status === 1" class="flex items-center gap-2 mt-0.5 max-w-[320px]">
+                      <div class="text-[10px] text-blue-500 font-mono font-medium animate-pulse truncate" :title="`正在分析表: ${profilingTasks[item.id]?.current_table}`">
+                        摸排中 {{ profilingProgressPercent(profilingTasks[item.id]) }}% · {{ profilingTasks[item.id]?.current_table || '等待中...' }}
+                      </div>
+                      <button
+                        type="button"
+                        class="text-[10px] text-amber-600 hover:text-amber-700 font-bold shrink-0"
+                        @click="requestCancelProfiling(item)"
+                      >
+                        停止
+                      </button>
                     </div>
                   </div>
                 </td>
@@ -1016,13 +1148,14 @@ onUnmounted(() => {
                   <span v-if="profilingTasks[item.id] && profilingTasks[item.id]?.status !== 1" class="inline-flex items-center text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-all shrink-0"
                         :class="[
                           profilingTasks[item.id]?.status === 2 ? 'bg-green-50 text-green-600 border border-green-100' : '',
-                          profilingTasks[item.id]?.status === 3 ? 'bg-red-50 text-red-600 border border-red-100' : '',
+                          isProfilingCancelled(profilingTasks[item.id]) ? 'bg-amber-50 text-amber-600 border border-amber-100' : '',
+                          profilingTasks[item.id]?.status === 3 && !isProfilingCancelled(profilingTasks[item.id]) ? 'bg-red-50 text-red-600 border border-red-100' : '',
                         ]">
                     <template v-if="profilingTasks[item.id]?.status === 2">
                       摸排完成
                     </template>
                     <template v-else-if="profilingTasks[item.id]?.status === 3" :title="profilingTasks[item.id]?.error_message">
-                      摸排异常
+                      {{ profilingStatusLabel(profilingTasks[item.id]) }}
                     </template>
                   </span>
                 </div>
@@ -1078,6 +1211,16 @@ onUnmounted(() => {
                         v-if="openMore === item.id"
                         class="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-lg shadow-xl z-50 py-1 overflow-hidden"
                       >
+                        <!-- 摸排进行中：停止 -->
+                        <button
+                          v-if="profilingTasks[item.id]?.status === 1"
+                          type="button"
+                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-50 transition-colors"
+                          @click="requestCancelProfiling(item); openMore = null"
+                        >
+                          <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
+                          停止摸排
+                        </button>
                         <!-- 摸排 -->
                         <button
                           type="button"
@@ -1088,6 +1231,16 @@ onUnmounted(() => {
                         >
                           <CircleStackIcon class="w-3.5 h-3.5 shrink-0" :class="profilingTasks[item.id]?.status === 1 ? 'animate-spin' : ''" />
                           {{ profilingTasks[item.id]?.status === 1 ? '摸排中...' : '启动摸排' }}
+                        </button>
+                        <!-- 全量重跑（已有摸排记录且非进行中时显示） -->
+                        <button
+                          v-if="hasProfilingHistory(item)"
+                          type="button"
+                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                          @click="requestForceProfiling(item); openMore = null"
+                        >
+                          <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
+                          全量重跑
                         </button>
                         <!-- 画像（仅摸排完成/异常时显示） -->
                         <button
@@ -1122,8 +1275,17 @@ onUnmounted(() => {
                     <span v-if="!canEdit" class="text-xs text-gray-400">只读</span>
                   </div>
                   <!-- 摸排进行中进度 -->
-                  <div v-if="profilingTasks[item.id]?.status === 1" class="text-[10px] text-blue-500 font-mono font-medium animate-pulse mt-0.5 max-w-[280px] truncate" :title="`正在分析表: ${profilingTasks[item.id]?.current_table}`">
-                    摸排中 {{ Math.round(((profilingTasks[item.id]?.processed_tables || 0) / (profilingTasks[item.id]?.total_tables || 1)) * 100) }}% · {{ profilingTasks[item.id]?.current_table || '等待中...' }}
+                  <div v-if="profilingTasks[item.id]?.status === 1" class="flex items-center gap-2 mt-0.5 max-w-[320px]">
+                    <div class="text-[10px] text-blue-500 font-mono font-medium animate-pulse truncate" :title="`正在分析表: ${profilingTasks[item.id]?.current_table}`">
+                      摸排中 {{ profilingProgressPercent(profilingTasks[item.id]) }}% · {{ profilingTasks[item.id]?.current_table || '等待中...' }}
+                    </div>
+                    <button
+                      type="button"
+                      class="text-[10px] text-amber-600 hover:text-amber-700 font-bold shrink-0"
+                      @click="requestCancelProfiling(item)"
+                    >
+                      停止
+                    </button>
                   </div>
                 </div>
               </td>
@@ -1449,7 +1611,7 @@ onUnmounted(() => {
                   <div class="min-w-0">
                     <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate">字段画像总数</div>
                     <div class="text-base font-black text-gray-800">
-                      {{ viewTableProfiles.reduce((acc, p) => acc + (p.columns_profile?.length || 0), 0) }}
+                      {{ viewTableProfiles.reduce((acc, p) => acc + (p.columns_count || p.columns_profile?.length || 0), 0) }}
                       <span class="text-[10px] text-gray-400 font-normal">个</span>
                     </div>
                   </div>
@@ -1594,7 +1756,10 @@ onUnmounted(() => {
                   <div v-if="expandedTables[profile.table_name]" class="border-t border-gray-100 p-4 bg-white space-y-2">
                     <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">字段画像定义 (Columns Profile)</div>
                     
-                    <div v-if="!profile.columns_profile || profile.columns_profile.length === 0" class="text-xs text-gray-400 italic">
+                    <div v-if="loadingProfileDetails[profile.table_name]" class="text-xs text-gray-400 italic animate-pulse">
+                      正在加载字段画像...
+                    </div>
+                    <div v-else-if="!profile.columns_profile || profile.columns_profile.length === 0" class="text-xs text-gray-400 italic">
                       暂无字段分析信息
                     </div>
                     <div v-else class="border border-gray-100 rounded-xl overflow-hidden">

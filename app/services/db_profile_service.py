@@ -13,17 +13,36 @@ from app.services.ai_service import AIService
 
 logger = logging.getLogger(__name__)
 
+PROFILE_CANCEL_MESSAGE = "用户主动取消摸排"
+_PROFILE_INIT_BATCH_SIZE = 500
+_HEAVY_COLUMN_TYPE_PATTERN = re.compile(
+    r"\b(BLOB|CLOB|NCLOB|LONG RAW|LONG|BYTEA|IMAGE|VARBINARY|BINARY|RAW)\b",
+    re.IGNORECASE,
+)
+_SAMPLE_COLUMN_LIMIT = 24
+
 
 class DbProfileService:
     """外部数据源元数据智能摸排与分析服务"""
 
     @staticmethod
+    def is_cancelled_task(task: Optional[Dict[str, Any]]) -> bool:
+        if not task:
+            return False
+        return (
+            task.get("status") == 3
+            and (task.get("error_message") or "").startswith(PROFILE_CANCEL_MESSAGE)
+        )
+
+    @staticmethod
     async def trigger_profiling_task(
         source_id: int,
-        background_tasks: BackgroundTasks
+        background_tasks: BackgroundTasks,
+        force: bool = False,
     ) -> Dict[str, Any]:
         """
         触发该数据源配置下所有表和视图的智能分析摸排后台任务（一个数据源只允许一个进行中的任务）
+        force=True 时重置全部表为待摸排并从头全量重跑（含已成功表，会重新消耗 LLM Token）
         """
         # 1. 检查数据源配置是否存在
         datasource = await DataSourceService.get_datasource(source_id)
@@ -48,24 +67,34 @@ class DbProfileService:
                 tables_info = await adapter.get_tables()
                 total_count = len(tables_info)
 
-                # 4. Upsert 主任务状态
+                await cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM db_table_profiles
+                    WHERE connection_id = %s AND status = 2
+                    """,
+                    (source_id,)
+                )
+                done_count_row = await cursor.fetchone()
+                done_count = 0 if force else int(done_count_row[0] if done_count_row else 0)
+
+                # 4. Upsert 主任务状态（续跑时保留已完成进度；全量重跑从 0 开始）
                 if existing_task:
                     await cursor.execute(
                         """
                         UPDATE db_profile_tasks
-                        SET status = 1, total_tables = %s, processed_tables = 0,
+                        SET status = 1, total_tables = %s, processed_tables = %s,
                             current_table = NULL, error_message = NULL, updated_at = NOW()
                         WHERE connection_id = %s
                         """,
-                        (total_count, source_id)
+                        (total_count, done_count, source_id)
                     )
                 else:
                     await cursor.execute(
                         """
                         INSERT INTO db_profile_tasks (connection_id, status, total_tables, processed_tables)
-                        VALUES (%s, 1, %s, 0)
+                        VALUES (%s, 1, %s, %s)
                         """,
-                        (source_id, total_count)
+                        (source_id, total_count, done_count)
                     )
 
                 # 5. 准备并初始化子表记录 (db_table_profiles)
@@ -75,36 +104,9 @@ class DbProfileService:
                 )
                 sub_rows = await cursor.fetchall()
                 existing_profiles = {row[1]: row[0] for row in sub_rows}
-
-                active_table_names = {t["name"] for t in tables_info}
-
-                # 清除已物理不存在的表的草稿
-                for t_name, p_id in list(existing_profiles.items()):
-                    if t_name not in active_table_names:
-                        await cursor.execute("DELETE FROM db_table_profiles WHERE id = %s", (p_id,))
-                        del existing_profiles[t_name]
-
-                # 初始化待处理状态
-                for t in tables_info:
-                    t_name = t["name"]
-                    t_type = t.get("type", "table").lower()
-                    if t_name in existing_profiles:
-                        await cursor.execute(
-                            """
-                            UPDATE db_table_profiles
-                            SET status = 0, error_message = NULL, table_type = %s, updated_at = NOW()
-                            WHERE connection_id = %s AND table_name = %s
-                            """,
-                            (t_type, source_id, t_name)
-                        )
-                    else:
-                        await cursor.execute(
-                            """
-                            INSERT INTO db_table_profiles (connection_id, table_name, table_type, status)
-                            VALUES (%s, %s, %s, 0)
-                            """,
-                            (source_id, t_name, t_type)
-                        )
+                await DbProfileService._bulk_init_table_profiles(
+                    cursor, source_id, tables_info, existing_profiles, force=force
+                )
                 
                 await conn.commit()
 
@@ -113,6 +115,45 @@ class DbProfileService:
         
         # 重新查询当前任务对象返回
         return await DbProfileService.get_task_status(source_id)
+
+    @staticmethod
+    async def cancel_profiling_task(source_id: int) -> Dict[str, Any]:
+        """请求中断进行中的摸排任务（当前表处理完成后停止）"""
+        task = await DbProfileService.get_task_status(source_id)
+        if not task or task.get("status") != 1:
+            raise ValueError("当前没有进行中的摸排任务")
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    UPDATE db_profile_tasks
+                    SET status = 3, error_message = %s, current_table = NULL, updated_at = NOW()
+                    WHERE connection_id = %s AND status = 1
+                    """,
+                    (PROFILE_CANCEL_MESSAGE, source_id)
+                )
+                if cursor.rowcount == 0:
+                    raise ValueError("摸排任务状态已变更，请刷新后重试")
+
+                await cursor.execute(
+                    """
+                    UPDATE db_table_profiles
+                    SET status = 0, updated_at = NOW()
+                    WHERE connection_id = %s AND status = 1
+                    """,
+                    (source_id,)
+                )
+                await conn.commit()
+
+        logger.info(f"[DbProfiling] Profiling task cancelled for source_id: {source_id}")
+        updated = await DbProfileService.get_task_status(source_id)
+        return updated or task
+
+    @staticmethod
+    async def _should_stop_profiling(source_id: int) -> bool:
+        task = await DbProfileService.get_task_status(source_id)
+        return not task or task.get("status") != 1
 
     @staticmethod
     async def get_task_status(source_id: int) -> Optional[Dict[str, Any]]:
@@ -144,8 +185,206 @@ class DbProfileService:
                 }
 
     @staticmethod
-    async def list_table_profiles(source_id: int) -> List[Dict[str, Any]]:
+    def _parse_json_field(value: Any, default: Any):
+        if value is None:
+            return default
+        if isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return default
+        return default
+
+    @staticmethod
+    async def _bulk_init_table_profiles(
+        cursor,
+        source_id: int,
+        tables_info: List[Dict[str, str]],
+        existing_profiles: Dict[str, int],
+        force: bool = False,
+    ) -> None:
+        active_table_names = {t["name"] for t in tables_info}
+
+        stale_ids = [p_id for t_name, p_id in existing_profiles.items() if t_name not in active_table_names]
+        if stale_ids:
+            placeholders = ",".join(["%s"] * len(stale_ids))
+            await cursor.execute(
+                f"DELETE FROM db_table_profiles WHERE id IN ({placeholders})",
+                stale_ids,
+            )
+            for t_name in list(existing_profiles.keys()):
+                if t_name not in active_table_names:
+                    del existing_profiles[t_name]
+
+        updates: List[tuple] = []
+        inserts: List[tuple] = []
+        for table in tables_info:
+            t_name = table["name"]
+            t_type = table.get("type", "table").lower()
+            if t_name in existing_profiles:
+                updates.append((t_type, source_id, t_name))
+            else:
+                inserts.append((source_id, t_name, t_type, 0))
+
+        if updates:
+            status_filter = "" if force else " AND status != 2"
+            await cursor.executemany(
+                f"""
+                UPDATE db_table_profiles
+                SET status = 0, error_message = NULL, table_type = %s, updated_at = NOW()
+                WHERE connection_id = %s AND table_name = %s{status_filter}
+                """,
+                updates,
+            )
+
+        for offset in range(0, len(inserts), _PROFILE_INIT_BATCH_SIZE):
+            chunk = inserts[offset: offset + _PROFILE_INIT_BATCH_SIZE]
+            if chunk:
+                await cursor.executemany(
+                    """
+                    INSERT INTO db_table_profiles (connection_id, table_name, table_type, status)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    chunk,
+                )
+
+    @staticmethod
+    def _is_heavy_column_type(col_type: str) -> bool:
+        return bool(_HEAVY_COLUMN_TYPE_PATTERN.search(col_type or ""))
+
+    @staticmethod
+    def _quote_identifier(db_type: str, name: str) -> str:
+        quote = "`" if db_type in ("mysql", "clickhouse") else '"'
+        return f"{quote}{name}{quote}"
+
+    @classmethod
+    async def _build_sample_query(cls, adapter, db_type: str, table_name: str) -> str:
+        quote = "`" if db_type in ("mysql", "clickhouse") else '"'
+        table_ref = (
+            f"{quote}{table_name.upper()}{quote}"
+            if db_type == "oracle"
+            else f"{quote}{table_name}{quote}"
+        )
+
+        try:
+            columns = await adapter.get_columns(table_name)
+            safe_cols = [
+                col["name"]
+                for col in columns
+                if col.get("name") and not cls._is_heavy_column_type(col.get("type", ""))
+            ]
+            if not safe_cols and columns:
+                safe_cols = [columns[0]["name"]]
+            if safe_cols:
+                safe_cols = safe_cols[:_SAMPLE_COLUMN_LIMIT]
+                col_sql = ", ".join(cls._quote_identifier(db_type, col) for col in safe_cols)
+                select_expr = col_sql
+            else:
+                select_expr = "*"
+        except Exception as exc:
+            logger.debug(f"[DbProfiling] Fallback to SELECT * for {table_name}: {exc}")
+            select_expr = "*"
+
+        if db_type == "oracle":
+            return f"SELECT {select_expr} FROM {table_ref} WHERE ROWNUM <= 3"
+        if db_type in ("sqlserver", "mssql", "tsql"):
+            return f"SELECT TOP 3 {select_expr} FROM {table_ref}"
+        return f"SELECT {select_expr} FROM {table_ref} LIMIT 3"
+
+    @staticmethod
+    async def list_table_profiles(
+        source_id: int,
+        summary: bool = False,
+        status: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """获取该数据源下已摸排/分析的表画像列表"""
+        conditions = ["connection_id = %s"]
+        params: List[Any] = [source_id]
+        if status is not None:
+            conditions.append("status = %s")
+            params.append(status)
+
+        where_clause = " AND ".join(conditions)
+        if summary:
+            sql = f"""
+                SELECT id, connection_id, table_name, table_type,
+                       ai_term, ai_description, ai_tags, status, error_message,
+                       confidence_score, is_temporary, is_ignored, confidence_reason,
+                       created_at, updated_at,
+                       JSON_LENGTH(columns_profile) AS columns_count
+                FROM db_table_profiles
+                WHERE {where_clause}
+                ORDER BY table_name ASC
+            """
+        else:
+            sql = f"""
+                SELECT id, connection_id, table_name, table_type, engine, ddl, sample_data,
+                       ai_term, ai_description, ai_tags, columns_profile, status, error_message,
+                       confidence_score, is_temporary, is_ignored, confidence_reason, created_at, updated_at
+                FROM db_table_profiles
+                WHERE {where_clause}
+                ORDER BY table_name ASC
+            """
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, tuple(params))
+                rows = await cursor.fetchall()
+
+        profiles = []
+        for row in rows:
+            if summary:
+                ai_tags = DbProfileService._parse_json_field(row[6], [])
+                profiles.append({
+                    "id": row[0],
+                    "connection_id": row[1],
+                    "table_name": row[2],
+                    "table_type": row[3],
+                    "ai_term": row[4],
+                    "ai_description": row[5],
+                    "ai_tags": ai_tags or [],
+                    "status": row[7],
+                    "error_message": row[8],
+                    "confidence_score": row[9],
+                    "is_temporary": row[10],
+                    "is_ignored": row[11],
+                    "confidence_reason": row[12],
+                    "created_at": row[13],
+                    "updated_at": row[14],
+                    "columns_count": int(row[15] or 0),
+                })
+            else:
+                sample_data = DbProfileService._parse_json_field(row[6], row[6])
+                ai_tags = DbProfileService._parse_json_field(row[9], [])
+                columns_profile = DbProfileService._parse_json_field(row[10], [])
+                profiles.append({
+                    "id": row[0],
+                    "connection_id": row[1],
+                    "table_name": row[2],
+                    "table_type": row[3],
+                    "engine": row[4],
+                    "ddl": row[5],
+                    "sample_data": sample_data,
+                    "ai_term": row[7],
+                    "ai_description": row[8],
+                    "ai_tags": ai_tags or [],
+                    "columns_profile": columns_profile or [],
+                    "status": row[11],
+                    "error_message": row[12],
+                    "confidence_score": row[13],
+                    "is_temporary": row[14],
+                    "is_ignored": row[15],
+                    "confidence_reason": row[16],
+                    "created_at": row[17],
+                    "updated_at": row[18],
+                })
+        return profiles
+
+    @staticmethod
+    async def get_table_profile(source_id: int, table_name: str) -> Optional[Dict[str, Any]]:
+        """获取单张表的摸排画像"""
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(
@@ -154,67 +393,40 @@ class DbProfileService:
                            ai_term, ai_description, ai_tags, columns_profile, status, error_message,
                            confidence_score, is_temporary, is_ignored, confidence_reason, created_at, updated_at
                     FROM db_table_profiles
-                    WHERE connection_id = %s
-                    ORDER BY table_name ASC
+                    WHERE connection_id = %s AND table_name = %s
+                    LIMIT 1
                     """,
-                    (source_id,)
+                    (source_id, table_name),
                 )
-                rows = await cursor.fetchall()
-                
-                profiles = []
-                for row in rows:
-                    sample_data = row[6]
-                    if sample_data and isinstance(sample_data, str):
-                        try:
-                            sample_data = json.loads(sample_data)
-                        except Exception:
-                            pass
-                            
-                    ai_tags = row[9]
-                    if ai_tags and isinstance(ai_tags, str):
-                        try:
-                            ai_tags = json.loads(ai_tags)
-                        except Exception:
-                            ai_tags = []
-                            
-                    columns_profile = row[10]
-                    if columns_profile and isinstance(columns_profile, str):
-                        try:
-                            columns_profile = json.loads(columns_profile)
-                        except Exception:
-                            columns_profile = []
+                row = await cursor.fetchone()
 
-                    profiles.append({
-                        "id": row[0],
-                        "connection_id": row[1],
-                        "table_name": row[2],
-                        "table_type": row[3],
-                        "engine": row[4],
-                        "ddl": row[5],
-                        "sample_data": sample_data,
-                        "ai_term": row[7],
-                        "ai_description": row[8],
-                        "ai_tags": ai_tags or [],
-                        "columns_profile": columns_profile or [],
-                        "status": row[11],
-                        "error_message": row[12],
-                        "confidence_score": row[13],
-                        "is_temporary": row[14],
-                        "is_ignored": row[15],
-                        "confidence_reason": row[16],
-                        "created_at": row[17],
-                        "updated_at": row[18]
-                    })
-                return profiles
+        if not row:
+            return None
 
-    @staticmethod
-    async def get_table_profile(source_id: int, table_name: str) -> Optional[Dict[str, Any]]:
-        """获取单张表的摸排画像"""
-        profiles = await DbProfileService.list_table_profiles(source_id)
-        for profile in profiles:
-            if profile.get("table_name") == table_name:
-                return profile
-        return None
+        sample_data = DbProfileService._parse_json_field(row[6], row[6])
+        ai_tags = DbProfileService._parse_json_field(row[9], [])
+        columns_profile = DbProfileService._parse_json_field(row[10], [])
+        return {
+            "id": row[0],
+            "connection_id": row[1],
+            "table_name": row[2],
+            "table_type": row[3],
+            "engine": row[4],
+            "ddl": row[5],
+            "sample_data": sample_data,
+            "ai_term": row[7],
+            "ai_description": row[8],
+            "ai_tags": ai_tags or [],
+            "columns_profile": columns_profile or [],
+            "status": row[11],
+            "error_message": row[12],
+            "confidence_score": row[13],
+            "is_temporary": row[14],
+            "is_ignored": row[15],
+            "confidence_reason": row[16],
+            "created_at": row[17],
+            "updated_at": row[18],
+        }
 
     @staticmethod
     def build_profile_ai_context(profile: Dict[str, Any]) -> str:
@@ -286,13 +498,31 @@ class DbProfileService:
             
             pending_tables = [{"table_name": r[0], "table_type": r[1]} for r in pending_rows]
             total_tables = len(pending_tables)
-            logger.info(f"[DbProfiling] Connection {source_id} has {total_tables} tables to analyze.")
+
+            task_status = await DbProfileService.get_task_status(source_id)
+            total_all_tables = task_status.get("total_tables", total_tables) if task_status else total_tables
+            completed_before = task_status.get("processed_tables", 0) if task_status else 0
+
+            logger.info(
+                f"[DbProfiling] Connection {source_id} has {total_tables} pending tables "
+                f"({completed_before}/{total_all_tables} already done)."
+            )
 
             # 2. 逐表处理
             for idx, table in enumerate(pending_tables):
+                if await DbProfileService._should_stop_profiling(source_id):
+                    logger.info(
+                        f"[DbProfiling] Profiling task stop requested for source_id: {source_id}, "
+                        f"exiting after {completed_before + idx}/{total_all_tables} tables."
+                    )
+                    return
+
                 table_name = table["table_name"]
                 table_type = table["table_type"]
-                logger.info(f"[DbProfiling] [{idx + 1}/{total_tables}] Profiling table: {table_name}")
+                logger.info(
+                    f"[DbProfiling] [{completed_before + idx + 1}/{total_all_tables}] "
+                    f"Profiling table: {table_name}"
+                )
 
                 # 更新主任务状态为当前正在分析的表
                 async with get_db_connection() as conn:
@@ -303,7 +533,7 @@ class DbProfileService:
                             SET processed_tables = %s, current_table = %s, updated_at = NOW()
                             WHERE connection_id = %s
                             """,
-                            (idx, table_name, source_id)
+                            (completed_before + idx, table_name, source_id)
                         )
                         await cursor.execute(
                             """
@@ -322,17 +552,12 @@ class DbProfileService:
                     # 1) 获取 DDL
                     ddl = await DbProfileService._get_table_ddl(adapter, db_type, table_name, table_type)
 
-                    # 2) 样例抓取 (SELECT LIMIT 3)
+                    # 2) 样例抓取 (SELECT LIMIT 3，跳过大字段类型)
                     sample_data_json = "[]"
                     try:
-                        quote = "`" if db_type in ("mysql", "clickhouse") else '"'
-                        if db_type == "oracle":
-                            query_sql = f"SELECT * FROM {quote}{table_name.upper()}{quote} WHERE ROWNUM <= 3"
-                        elif db_type in ("sqlserver", "mssql", "tsql"):
-                            query_sql = f"SELECT TOP 3 * FROM {quote}{table_name}{quote}"
-                        else:
-                            query_sql = f"SELECT * FROM {quote}{table_name}{quote} LIMIT 3"
-                        
+                        query_sql = await DbProfileService._build_sample_query(
+                            adapter, db_type, table_name
+                        )
                         sample_res = await adapter.execute_sql(query_sql)
                         rows = sample_res.get("items") or sample_res.get("rows") or []
                         cols = sample_res.get("columns", [])
@@ -451,6 +676,10 @@ class DbProfileService:
                             )
                             await conn.commit()
 
+            if await DbProfileService._should_stop_profiling(source_id):
+                logger.info(f"[DbProfiling] Profiling task cancelled before finalize for source_id: {source_id}")
+                return
+
             # 3. 完成所有表后，将主任务置为成功 (2)
             async with get_db_connection() as conn:
                 async with conn.cursor() as cursor:
@@ -458,9 +687,9 @@ class DbProfileService:
                         """
                         UPDATE db_profile_tasks
                         SET status = 2, processed_tables = %s, current_table = NULL, updated_at = NOW()
-                        WHERE connection_id = %s
+                        WHERE connection_id = %s AND status = 1
                         """,
-                        (total_tables, source_id)
+                        (total_all_tables, source_id)
                     )
                     await conn.commit()
             logger.info(f"[DbProfiling] Finished background profiling task for source_id: {source_id}")

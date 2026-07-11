@@ -22,6 +22,7 @@ const props = defineProps<{
   aiLogs?: {timestamp: number, type: 'info' | 'error' | 'success', msg: string}[]
   hasProfiled?: boolean
   tableProfilesMap?: Record<string, any>
+  sourceId?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +33,7 @@ const emit = defineEmits<{
   (e: 'table-dblclick', table: string): void
   (e: 'table-profile-generate', table: string): void
   (e: 'fetch-columns', table: string): void
+  (e: 'fetch-profile-detail', table: string): void
   (e: 'column-dblclick', column: string): void
   (e: 'table-ai', table: string): void
   (e: 'clear-logs'): void
@@ -194,6 +196,9 @@ const toggleExpand = (table: string, event: Event) => {
     expandedTables.value.push(table)
     if (!props.columnsCache?.[table]) {
       emit('fetch-columns', table)
+    }
+    if (advancedMode.value && props.sourceId && !props.tableProfilesMap?.[table]?.columns_profile) {
+      emit('fetch-profile-detail', table)
     }
   }
 }

@@ -70,7 +70,9 @@ const loadTableProfiles = async () => {
   if (!selectedSource.value) return
   loadingProfiles.value = true
   try {
-    const res = await axios.get(`/api/portal/datasource/datasources/${selectedSource.value.id}/table-profiles`)
+    const res = await axios.get(`/api/portal/datasource/datasources/${selectedSource.value.id}/table-profiles`, {
+      params: { summary: true, status: 2 },
+    })
     tableProfiles.value = res.data || []
   } catch {
     tableProfiles.value = []
@@ -196,21 +198,30 @@ const handleConfirm = async () => {
   try {
     let combinedDdl = ""
     for (const tableName of finalTables) {
-      // 优化：如果在 AI 摸排里面已经分析过这只表并且存了建表 DDL，我们直接用，不需要重新向数据库查询 columns 并拼接！
-      // 这可以节省大量往返和接口等待！
       const cached = tableProfiles.value.find(p => p.table_name === tableName)
-      if (cached && cached.ddl) {
-        combinedDdl += cached.ddl + "\n\n"
+      let ddl = cached?.ddl
+      if (!ddl && selectedSource.value) {
+        try {
+          const res = await axios.get(
+            `/api/portal/datasource/datasources/${selectedSource.value.id}/table-profiles/${encodeURIComponent(tableName)}`
+          )
+          ddl = res.data?.ddl
+        } catch {
+          ddl = null
+        }
+      }
+      if (ddl) {
+        combinedDdl += ddl + "\n\n"
       } else {
         const res = await axios.post('/api/portal/meta/datasource/columns', { 
           data_source: selectedSource.value.source_name, 
           table_name: tableName 
         })
         const cols = res.data.columns
-        const ddl = `CREATE TABLE ${tableName} (\n` + 
+        const generatedDdl = `CREATE TABLE ${tableName} (\n` + 
                     cols.map((c: any) => `  ${c.name} ${c.type} COMMENT '${c.comment || ''}'`).join(',\n') + 
                     `\n);\n\n`
-        combinedDdl += ddl
+        combinedDdl += generatedDdl
       }
     }
     emit('confirm', combinedDdl.trim(), selectedSource.value.source_name)

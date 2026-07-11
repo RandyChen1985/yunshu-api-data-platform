@@ -423,13 +423,30 @@ const hasProfiled = computed(() => Object.keys(tableProfilesMap.value).length > 
 const fetchTableProfiles = async () => {
   if (!selectedSourceId.value) return
   try {
-    const res = await axios.get(`/api/portal/datasource/datasources/${selectedSourceId.value}/table-profiles`)
+    const res = await axios.get(`/api/portal/datasource/datasources/${selectedSourceId.value}/table-profiles`, {
+      params: { summary: true, status: 2 },
+    })
     const profiles: any[] = Array.isArray(res.data) ? res.data : []
     const map: Record<string, any> = {}
     profiles.forEach((p: any) => { map[p.table_name] = p })
     tableProfilesMap.value = map
   } catch {
     tableProfilesMap.value = {}
+  }
+}
+
+const fetchTableProfileDetail = async (tableName: string) => {
+  if (!selectedSourceId.value || tableProfilesMap.value[tableName]?.columns_profile) return
+  try {
+    const res = await axios.get(
+      `/api/portal/datasource/datasources/${selectedSourceId.value}/table-profiles/${encodeURIComponent(tableName)}`
+    )
+    tableProfilesMap.value[tableName] = {
+      ...tableProfilesMap.value[tableName],
+      ...res.data,
+    }
+  } catch {
+    // 单表详情加载失败时保留摘要信息
   }
 }
 
@@ -1304,7 +1321,9 @@ onMounted(() => {
           v-model="selectedTables" v-model:auto-context="autoContext" :ai-logs="aiLogs"
           :data-source-info="currentDataSourceInfo" :is-admin="isAdmin"
           :table-profiles-map="tableProfilesMap" :has-profiled="hasProfiled"
+          :source-id="selectedSourceId"
           @refresh="fetchAvailableTables" @table-click="openTableDetail" @fetch-columns="fetchColumns" @column-dblclick="handleColumnInsert"
+          @fetch-profile-detail="fetchTableProfileDetail"
           @table-profile-generate="handleTableProfileGenerate"
           @table-ai="openTableAiSuggestion" :show-ai="isAiEnabled && hasPerm('element:lab:generate')"
           @clear-logs="clearAiLogs"
