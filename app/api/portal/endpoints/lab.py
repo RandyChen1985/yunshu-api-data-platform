@@ -8,9 +8,10 @@ from app.services.data_adapter.clickhouse import ClickHouseAdapter
 from app.services.meta_service import MetaService
 from typing import List, Optional
 
-from app.schemas.lab import PreviewRequest, PublishRequest, AIRequest, AIGenerateRequest
+from app.schemas.lab import PreviewRequest, PublishRequest, AIRequest, AIGenerateRequest, AIProfileGenerateRequest
 
 from app.services.ai_service import AIService
+from app.services.db_profile_service import DbProfileService
 from app.schemas.resource import ResourceCreate, FieldConfig
 from pydantic import BaseModel
 import logging
@@ -63,6 +64,42 @@ DATABASE SCHEMA CONTEXT:
 {schema_context}
 
 要求：仅返回 SQL 代码，不要包含 Markdown 片段。
+"""
+
+PROMPT_STRATEGY_PROFILE_API = """你是一位极致专业的资深数据中台工程师。用户双击了一张已完成 AI 摸排的数据表，希望你基于摸排画像生成一条可直接发布为 API 的分析 SQL。
+
+【核心规范 (Strict)】:
+1. **[必选] 逻辑起始**：必须使用 `WHERE 1=1` 作为过滤条件的起始。
+2. **[必选] 参数包裹**：所有动态参数必须包裹在 `{{% if 参数名 %}} ... {{% endif %}}` 中。
+3. **[必选] 别名规范**：禁止使用中文作为字段别名（AS），别名使用英文字母、数字和下划线。
+4. **[必选] 仅限单条语句**：只生成一段 SQL，严禁分号结尾或多条语句。
+5. **[必选] 丰富注释**：SQL 开头及关键逻辑处必须包含 `--` 中文注释，说明查询目的、字段含义、过滤逻辑。
+6. **禁止臆造**：只能使用摸排上下文中明确列出的表名与字段名。
+
+【重要】当前目标数据库类型：{source_type}
+
+TABLE PROFILING CONTEXT:
+{schema_context}
+
+要求：仅返回纯 SQL 代码，不要 Markdown 标记。
+"""
+
+PROMPT_STRATEGY_PROFILE_ANALYST = """你是一位资深数据分析专家。用户双击了一张已完成 AI 摸排的数据表，希望你基于摸排画像生成一条可直接执行的业务探索分析 SQL。
+
+【分析准则】:
+1. **[核心] 价值导向**：根据表的用途描述、字段画像和样例数据，选择最有价值的分析角度（如概览统计、分布分析、时间趋势、TOP N、空值检查等）。
+2. **[必选] 丰富注释**：SQL 开头及 SELECT 字段、JOIN、WHERE、GROUP BY 等关键位置必须包含 `--` 中文注释，解释业务含义与分析意图。
+3. **[必选] 别名规范**：禁止使用中文作为字段别名（AS），别名使用英文字母、数字和下划线。
+4. **[必选] 仅限单条语句**：只生成一段 SQL，严禁分号结尾或多条语句。
+5. **直接可执行**：尽量使用具体过滤值或合理默认条件，确保 SQL 可直接运行。
+6. **禁止臆造**：只能使用摸排上下文中明确列出的表名与字段名。
+
+【重要】当前目标数据库类型：{source_type}
+
+TABLE PROFILING CONTEXT:
+{schema_context}
+
+要求：仅返回纯 SQL 代码，不要 Markdown 标记。
 """
 
 PROMPT_STRATEGY_RECOMMEND = """你是一位享誉业内的资深数据分析专家。
@@ -250,6 +287,49 @@ async def ai_generate_sql(request: AIGenerateRequest, user=Depends(require_permi
         }
     except Exception as e:
         logger.error(f"AI Generate SQL failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/ai/generate-from-profile")
+async def ai_generate_sql_from_profile(
+    request: AIProfileGenerateRequest,
+    user=Depends(require_permission("element:lab:generate"))
+):
+    """基于摸排画像为单表生成带注释的分析 SQL"""
+    profile = await DbProfileService.get_table_profile(request.source_id, request.table_name)
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"未找到表 [{request.table_name}] 的摸排画像，请先完成数据源摸排")
+
+    schema_context = DbProfileService.build_profile_ai_context(profile)
+    ds_config = await DataSourceService.get_datasource(request.source_id)
+    source_type = ds_config.source_type if ds_config else "mysql"
+
+    if request.mode == "api":
+        system_prompt = PROMPT_STRATEGY_PROFILE_API.format(source_type=source_type, schema_context=schema_context)
+    else:
+        system_prompt = PROMPT_STRATEGY_PROFILE_ANALYST.format(source_type=source_type, schema_context=schema_context)
+
+    table_label = profile.get("ai_term") or request.table_name
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"请为表 [{request.table_name}]（{table_label}）生成一条高质量的业务分析 SQL，并附带完整中文注释。"}
+    ]
+    try:
+        sql = await AIService.chat_completion(messages)
+        import re
+        sql = re.sub(r'```sql|```', '', sql).strip()
+        if ";" in sql:
+            sql = sql.split(";")[0].strip()
+        return {
+            "sql": sql,
+            "table_name": request.table_name,
+            "profile_summary": {
+                "ai_term": profile.get("ai_term"),
+                "ai_description": profile.get("ai_description"),
+                "confidence_score": profile.get("confidence_score"),
+            }
+        }
+    except Exception as e:
+        logger.error(f"AI Generate SQL from profile failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/ai/check")

@@ -2,6 +2,13 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { TableCellsIcon, ChevronRightIcon, ChevronDownIcon, CubeIcon, SparklesIcon, EyeIcon, CommandLineIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
+type MergedColumn = {
+  name: string
+  type: string
+  term?: string
+  desc?: string
+}
+
 const props = defineProps<{
   tables: any[]
   loading: boolean
@@ -13,6 +20,8 @@ const props = defineProps<{
   showAi?: boolean
   isAdmin?: boolean
   aiLogs?: {timestamp: number, type: 'info' | 'error' | 'success', msg: string}[]
+  hasProfiled?: boolean
+  tableProfilesMap?: Record<string, any>
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +30,7 @@ const emit = defineEmits<{
   (e: 'refresh'): void
   (e: 'table-click', table: string): void
   (e: 'table-dblclick', table: string): void
+  (e: 'table-profile-generate', table: string): void
   (e: 'fetch-columns', table: string): void
   (e: 'column-dblclick', column: string): void
   (e: 'table-ai', table: string): void
@@ -29,6 +39,7 @@ const emit = defineEmits<{
 
 const activeTab = ref<'tables' | 'debug'>('tables')
 const logContainerRef = ref<HTMLElement | null>(null)
+const advancedMode = ref(false)
 
 // Auto scroll to bottom when new logs arrive
 watch(() => props.aiLogs?.length, () => {
@@ -47,15 +58,130 @@ const formatTime = (ts: number) => {
 }
 
 const search = ref('')
-const expandedTables = ref<string[]>([]) 
+const expandedTables = ref<string[]>([])
+const selectedProfileTag = ref<string | null>(null)
+const showTagPicker = ref(false)
+const tagSearch = ref('')
+const TAGS_INLINE_LIMIT = 3
+
+const getTableName = (t: any) => (typeof t === 'string' ? t : t.name)
+
+const availableTags = computed(() => {
+  if (!advancedMode.value || !props.tableProfilesMap) return []
+  const counts: Record<string, number> = {}
+  Object.values(props.tableProfilesMap).forEach((profile: any) => {
+    if (profile?.is_ignored === 1) return
+    if (Array.isArray(profile?.ai_tags)) {
+      profile.ai_tags.forEach((tag: string) => {
+        if (tag?.trim()) {
+          const cleanTag = tag.trim()
+          counts[cleanTag] = (counts[cleanTag] || 0) + 1
+        }
+      })
+    }
+  })
+  return Object.entries(counts)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+})
+
+const profiledTableCount = computed(() => {
+  if (!props.tableProfilesMap) return 0
+  return Object.values(props.tableProfilesMap).filter((p: any) => p?.is_ignored !== 1).length
+})
+
+const inlineTags = computed(() => availableTags.value.slice(0, TAGS_INLINE_LIMIT))
+
+const hiddenTagCount = computed(() => Math.max(0, availableTags.value.length - TAGS_INLINE_LIMIT))
+
+const selectedTagNotInline = computed(() => {
+  if (!selectedProfileTag.value) return null
+  return inlineTags.value.some(t => t.name === selectedProfileTag.value) ? null : selectedProfileTag.value
+})
+
+const filteredPickerTags = computed(() => {
+  if (!tagSearch.value.trim()) return availableTags.value
+  const q = tagSearch.value.trim().toLowerCase()
+  return availableTags.value.filter(t => t.name.toLowerCase().includes(q))
+})
+
+const toggleProfileTag = (tag: string) => {
+  selectedProfileTag.value = selectedProfileTag.value === tag ? null : tag
+  showTagPicker.value = false
+  tagSearch.value = ''
+}
+
+const openTagPicker = () => {
+  showTagPicker.value = true
+  tagSearch.value = ''
+}
+
+const closeTagPicker = () => {
+  showTagPicker.value = false
+  tagSearch.value = ''
+}
+
+// 切换数据源/摸排状态时重置高级模式与标签筛选
+watch(() => props.hasProfiled, () => {
+  advancedMode.value = false
+  selectedProfileTag.value = null
+  showTagPicker.value = false
+  tagSearch.value = ''
+})
+
+watch(advancedMode, (enabled) => {
+  if (!enabled) {
+    selectedProfileTag.value = null
+    showTagPicker.value = false
+    tagSearch.value = ''
+  }
+})
+
+watch(showTagPicker, (open) => {
+  if (!open) return
+  const handler = () => {
+    closeTagPicker()
+    document.removeEventListener('click', handler)
+  }
+  setTimeout(() => document.addEventListener('click', handler), 0)
+})
 
 const filteredTables = computed(() => {
-  if (!search.value) return props.tables
+  let list = props.tables
+
+  if (advancedMode.value) {
+    if (selectedProfileTag.value) {
+      list = list.filter(t => {
+        const name = getTableName(t)
+        const tags = props.tableProfilesMap?.[name]?.ai_tags
+        return Array.isArray(tags) && tags.includes(selectedProfileTag.value!)
+      })
+    }
+    if (search.value) {
+      const query = search.value.toLowerCase()
+      list = list.filter(t => {
+        const name = getTableName(t)
+        const profile = props.tableProfilesMap?.[name]
+        return (
+          name.toLowerCase().includes(query) ||
+          (profile?.ai_term && profile.ai_term.toLowerCase().includes(query)) ||
+          (profile?.ai_description && profile.ai_description.toLowerCase().includes(query))
+        )
+      })
+    }
+    return list
+  }
+
+  if (!search.value) return list
   const query = search.value.toLowerCase()
-  return props.tables.filter(t => (typeof t === 'string' ? t : t.name).toLowerCase().includes(query))
+  return list.filter(t => getTableName(t).toLowerCase().includes(query))
 })
 
 const handleTableDblClick = (table: string) => {
+  if (advancedMode.value) {
+    emit('table-profile-generate', table)
+    return
+  }
   emit('table-dblclick', table)
 }
 
@@ -73,6 +199,35 @@ const toggleExpand = (table: string, event: Event) => {
 }
 
 const isExpanded = (table: string) => expandedTables.value.includes(table)
+
+const getMergedColumns = (tableName: string): MergedColumn[] | null => {
+  const physical = props.columnsCache?.[tableName]
+  const profileCols = props.tableProfilesMap?.[tableName]?.columns_profile as
+    | Array<{ name: string; term?: string; desc?: string }>
+    | undefined
+
+  if (!advancedMode.value || !profileCols?.length) {
+    return physical ? physical.map(col => ({ ...col })) : null
+  }
+
+  const profileMap = Object.fromEntries(profileCols.map(c => [c.name, c]))
+
+  if (physical) {
+    return physical.map(col => ({
+      name: col.name,
+      type: col.type,
+      term: profileMap[col.name]?.term,
+      desc: profileMap[col.name]?.desc,
+    }))
+  }
+
+  return profileCols.map(c => ({
+    name: c.name,
+    type: '',
+    term: c.term,
+    desc: c.desc,
+  }))
+}
 
 const handleColumnDblClick = (colName: string) => {
   emit('column-dblclick', colName)
@@ -134,26 +289,138 @@ const handleDragStart = (event: DragEvent, name: string) => {
             <span class="text-xs font-bold uppercase tracking-wider transition-colors duration-500" :class="flashTitle ? 'text-indigo-600' : 'text-gray-500'">库表资产</span>
             <span class="ml-0.5 px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded text-[10px] font-bold">{{ filteredTables.length }}</span>
           </div>
-          <button @click="$emit('refresh')" class="text-gray-400 hover:text-blue-600">
-            <svg class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-          </button>
+          <div class="flex items-center gap-2">
+            <!-- 高级模式胶囊开关（仅摸排完成时显示） -->
+            <button
+              v-if="hasProfiled"
+              type="button"
+              class="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all duration-200"
+              :class="advancedMode
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                : 'bg-white text-gray-400 border-gray-200 hover:border-indigo-300 hover:text-indigo-500'"
+              @click="advancedMode = !advancedMode"
+              title="开启 AI 摸排高级模式"
+            >
+              <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+              高级
+            </button>
+            <button @click="$emit('refresh')" class="text-gray-400 hover:text-blue-600">
+              <svg class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            </button>
+          </div>
         </div>
         
-        <div class="p-2 border-b">
-          <input v-model="search" placeholder="搜索资产..." class="w-full px-2 py-1 text-xs border-none bg-gray-100 rounded focus:ring-1 focus:ring-blue-500" />
+        <div class="p-2 border-b space-y-2">
+          <input
+            v-model="search"
+            :placeholder="advancedMode ? '搜索表名/术语/描述...' : '搜索资产...'"
+            class="w-full px-2 py-1 text-xs border-none bg-gray-100 rounded focus:ring-1 focus:ring-blue-500"
+          />
+
+          <!-- 高级模式：紧凑标签 + 弹出面板（避免内联展开占满侧边栏） -->
+          <div v-if="advancedMode && availableTags.length > 0" class="relative" @click.stop>
+            <div class="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                @click="selectedProfileTag = null"
+                :class="[
+                  'px-2 py-0.5 rounded-full text-[8px] font-semibold border transition-all shrink-0',
+                  !selectedProfileTag
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200'
+                ]"
+              >
+                全部 ({{ profiledTableCount }})
+              </button>
+
+              <button
+                v-for="tag in inlineTags"
+                :key="tag.name"
+                type="button"
+                @click="toggleProfileTag(tag.name)"
+                :class="[
+                  'px-2 py-0.5 rounded-full text-[8px] font-semibold border transition-all max-w-[96px] truncate shrink-0',
+                  selectedProfileTag === tag.name
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200'
+                ]"
+                :title="`${tag.name} (${tag.count})`"
+              >
+                {{ tag.name }} ({{ tag.count }})
+              </button>
+
+              <button
+                v-if="selectedTagNotInline"
+                type="button"
+                @click="toggleProfileTag(selectedTagNotInline)"
+                class="px-2 py-0.5 rounded-full text-[8px] font-semibold border bg-indigo-600 text-white border-indigo-600 max-w-[96px] truncate shrink-0"
+                :title="selectedTagNotInline"
+              >
+                {{ selectedTagNotInline }}
+              </button>
+
+              <button
+                v-if="hiddenTagCount > 0"
+                type="button"
+                class="px-2 py-0.5 rounded-full text-[8px] font-semibold border border-dashed transition-all shrink-0"
+                :class="showTagPicker
+                  ? 'bg-indigo-50 text-indigo-600 border-indigo-300'
+                  : 'border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50'"
+                @click="showTagPicker ? closeTagPicker() : openTagPicker()"
+              >
+                {{ showTagPicker ? '收起' : `+${hiddenTagCount} 标签` }}
+              </button>
+            </div>
+
+            <!-- 标签选择浮层 -->
+            <div
+              v-if="showTagPicker"
+              class="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-xl p-2 flex flex-col"
+            >
+              <input
+                v-model="tagSearch"
+                placeholder="搜索标签..."
+                class="w-full px-2 py-1 text-[10px] border border-gray-200 rounded focus:ring-1 focus:ring-indigo-500 outline-none"
+                @click.stop
+              />
+              <div class="mt-2 max-h-40 overflow-y-auto custom-scrollbar flex flex-wrap gap-1">
+                <button
+                  v-for="tag in filteredPickerTags"
+                  :key="tag.name"
+                  type="button"
+                  @click="toggleProfileTag(tag.name)"
+                  :class="[
+                    'px-2 py-0.5 rounded-full text-[8px] font-semibold border transition-all max-w-full truncate',
+                    selectedProfileTag === tag.name
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-indigo-50 hover:border-indigo-200'
+                  ]"
+                  :title="`${tag.name} (${tag.count})`"
+                >
+                  {{ tag.name }} ({{ tag.count }})
+                </button>
+                <div v-if="filteredPickerTags.length === 0" class="w-full py-3 text-center text-[10px] text-gray-400 italic">
+                  无匹配标签
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="flex-1 overflow-y-auto p-1 custom-scrollbar">
           <div v-if="loading" class="p-4 text-center text-gray-400 text-xs italic">资源扫描中...</div>
           <div v-else-if="filteredTables.length === 0" class="p-4 text-center text-gray-400 text-xs">无匹配资产</div>
           
           <div v-for="t in filteredTables" :key="typeof t === 'string' ? t : t.name">
-            <div 
+            <!-- 普通模式行 -->
+            <div
+              v-if="!advancedMode"
               @click="toggleExpand(typeof t === 'string' ? t : t.name, $event)" 
               @dblclick="handleTableDblClick(typeof t === 'string' ? t : t.name)"
               draggable="true"
               @dragstart="handleDragStart($event, typeof t === 'string' ? t : t.name)"
               class="px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded cursor-pointer transition-colors flex items-center group justify-between"
-              :class="isExpanded(typeof t === 'string' ? t : t.name) ? 'bg-blue-50/50' : ''">
+              :class="isExpanded(typeof t === 'string' ? t : t.name) ? 'bg-blue-50/50' : ''"
+            >
               <div class="flex items-center overflow-hidden flex-1">
                 <!-- Checkbox only visible when autoContext is OFF -->
                 <input 
@@ -196,18 +463,107 @@ const handleDragStart = (event: DragEvent, name: string) => {
                  <component :is="isExpanded(typeof t === 'string' ? t : t.name) ? ChevronDownIcon : ChevronRightIcon" class="w-3 h-3 text-gray-400" />
               </div>
             </div>
+
+            <!-- 高级模式行：摸排信息展示 -->
+            <div
+              v-else
+              @click="toggleExpand(typeof t === 'string' ? t : t.name, $event)"
+              @dblclick="handleTableDblClick(typeof t === 'string' ? t : t.name)"
+              draggable="true"
+              @dragstart="handleDragStart($event, typeof t === 'string' ? t : t.name)"
+              title="双击基于摸排画像生成分析 SQL"
+              class="px-2.5 py-2 rounded cursor-pointer transition-colors group border border-transparent"
+              :class="[
+                modelValue.includes(typeof t === 'string' ? t : t.name) ? 'border-indigo-200 bg-indigo-50/40' : 'hover:bg-blue-50/40 hover:border-blue-100',
+                isExpanded(typeof t === 'string' ? t : t.name) ? 'bg-blue-50/30' : ''
+              ]"
+            >
+              <div class="flex items-start justify-between gap-1">
+                <div class="flex items-start gap-1.5 overflow-hidden flex-1 min-w-0">
+                  <input
+                    v-if="!autoContext"
+                    type="checkbox"
+                    :checked="modelValue.includes(typeof t === 'string' ? t : t.name)"
+                    @change="(e) => {
+                      const checked = (e.target as HTMLInputElement).checked;
+                      const name = typeof t === 'string' ? t : t.name;
+                      const newVal = checked ? [...modelValue, name] : modelValue.filter(x => x !== name);
+                      emit('update:modelValue', newVal);
+                    }"
+                    @click.stop
+                    class="mt-0.5 h-3.5 w-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 shrink-0"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <!-- 表名 + 类型 Badge -->
+                    <div class="flex items-center gap-1 flex-wrap">
+                      <span
+                        class="text-xs font-mono font-semibold truncate"
+                        :class="modelValue.includes(typeof t === 'string' ? t : t.name) ? 'text-indigo-700' : 'text-gray-800'"
+                        :title="typeof t === 'string' ? t : t.name"
+                      >{{ typeof t === 'string' ? t : t.name }}</span>
+                      <span
+                        v-if="typeof t !== 'string'"
+                        :class="t.type === 'VIEW' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'"
+                        class="text-[8px] px-1 py-0.5 rounded font-black leading-none shrink-0"
+                      >{{ t.type }}</span>
+                      <!-- 置信度 -->
+                      <span
+                        v-if="tableProfilesMap?.[(typeof t === 'string' ? t : t.name)]?.confidence_score != null"
+                        class="text-[8px] px-1 py-0.5 rounded font-bold leading-none shrink-0"
+                        :class="
+                          tableProfilesMap[(typeof t === 'string' ? t : t.name)].confidence_score >= 80
+                            ? 'bg-green-100 text-green-700'
+                            : tableProfilesMap[(typeof t === 'string' ? t : t.name)].confidence_score >= 50
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-red-100 text-red-600'
+                        "
+                        :title="'置信度: ' + tableProfilesMap[(typeof t === 'string' ? t : t.name)].confidence_score"
+                      >{{ tableProfilesMap[(typeof t === 'string' ? t : t.name)].confidence_score }}%</span>
+                    </div>
+                    <!-- 备注/描述 -->
+                    <div
+                      v-if="tableProfilesMap?.[(typeof t === 'string' ? t : t.name)]?.ai_description"
+                      class="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug"
+                      :title="tableProfilesMap[(typeof t === 'string' ? t : t.name)].ai_description"
+                    >{{ tableProfilesMap[(typeof t === 'string' ? t : t.name)].ai_description }}</div>
+                  </div>
+                </div>
+                <div class="flex items-center shrink-0 ml-1">
+                  <button
+                    @click.stop="emit('table-click', typeof t === 'string' ? t : t.name)"
+                    class="p-1 text-gray-300 hover:text-blue-600 rounded opacity-0 group-hover:opacity-100 transition-all"
+                    title="查看资产画像"
+                  ><EyeIcon class="w-3 h-3" /></button>
+                  <component :is="isExpanded(typeof t === 'string' ? t : t.name) ? ChevronDownIcon : ChevronRightIcon" class="w-3 h-3 text-gray-300" />
+                </div>
+              </div>
+            </div>
             
             <!-- Columns Tree -->
             <div v-if="isExpanded(typeof t === 'string' ? t : t.name)" class="pl-4 border-l border-gray-100 ml-3 mb-1 max-h-96 overflow-y-auto custom-scrollbar">
-               <div v-if="!columnsCache?.[typeof t === 'string' ? t : t.name]" class="py-1 text-[10px] text-gray-400 italic pl-4">读取 Schema...</div>
-               <div v-else v-for="col in columnsCache[typeof t === 'string' ? t : t.name]" :key="col.name" 
+               <div v-if="!getMergedColumns(typeof t === 'string' ? t : t.name)" class="py-1 text-[10px] text-gray-400 italic pl-4">读取 Schema...</div>
+               <div v-else v-for="col in getMergedColumns(typeof t === 'string' ? t : t.name)!" :key="col.name" 
                   @dblclick.stop="handleColumnDblClick(col.name)"
                   draggable="true"
                   @dragstart.stop="handleDragStart($event, col.name)"
-                  class="flex items-center py-1 pl-2 pr-2 hover:bg-gray-50 cursor-pointer group/col rounded">
-                  <CubeIcon class="w-2.5 h-2.5 mr-1.5 text-gray-300 group-hover/col:text-indigo-400" />
-                  <span class="text-[10px] text-gray-500 group-hover/col:text-indigo-600 font-mono truncate mr-1">{{ col.name }}</span>
-                  <span class="text-[9px] text-gray-300 group-hover/col:text-indigo-300 ml-auto uppercase">{{ col.type }}</span>
+                  class="py-1 pl-2 pr-2 hover:bg-gray-50 cursor-pointer group/col rounded"
+                  :class="advancedMode && (col.term || col.desc) ? 'flex flex-col gap-0.5' : 'flex items-center'"
+               >
+                  <div class="flex items-center min-w-0 w-full">
+                    <CubeIcon class="w-2.5 h-2.5 mr-1.5 text-gray-300 group-hover/col:text-indigo-400 shrink-0" />
+                    <span class="text-[10px] text-gray-500 group-hover/col:text-indigo-600 font-mono truncate">{{ col.name }}</span>
+                    <span
+                      v-if="advancedMode && col.term"
+                      class="text-[9px] text-indigo-500 font-medium truncate ml-1 max-w-[80px]"
+                      :title="col.term"
+                    >{{ col.term }}</span>
+                    <span v-if="col.type" class="text-[9px] text-gray-300 group-hover/col:text-indigo-300 ml-auto uppercase shrink-0">{{ col.type }}</span>
+                  </div>
+                  <div
+                    v-if="advancedMode && col.desc"
+                    class="text-[9px] text-gray-400 leading-snug line-clamp-2 pl-4"
+                    :title="col.desc"
+                  >{{ col.desc }}</div>
                </div>
             </div>
           </div>

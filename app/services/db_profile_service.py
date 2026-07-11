@@ -208,6 +208,56 @@ class DbProfileService:
                 return profiles
 
     @staticmethod
+    async def get_table_profile(source_id: int, table_name: str) -> Optional[Dict[str, Any]]:
+        """获取单张表的摸排画像"""
+        profiles = await DbProfileService.list_table_profiles(source_id)
+        for profile in profiles:
+            if profile.get("table_name") == table_name:
+                return profile
+        return None
+
+    @staticmethod
+    def build_profile_ai_context(profile: Dict[str, Any]) -> str:
+        """将摸排画像组装为 AI 可用的 schema 上下文"""
+        import json as _json
+
+        lines = [
+            f"表名: {profile.get('table_name', '')}",
+            f"类型: {profile.get('table_type', 'TABLE')}",
+        ]
+        if profile.get("ai_term"):
+            lines.append(f"业务术语: {profile['ai_term']}")
+        if profile.get("ai_description"):
+            lines.append(f"用途描述: {profile['ai_description']}")
+        tags = profile.get("ai_tags") or []
+        if isinstance(tags, list) and tags:
+            lines.append(f"分类标签: {', '.join(str(t) for t in tags)}")
+        if profile.get("confidence_score") is not None:
+            lines.append(f"分析置信度: {profile['confidence_score']}%")
+        if profile.get("confidence_reason"):
+            lines.append(f"置信说明: {profile['confidence_reason']}")
+
+        columns_profile = profile.get("columns_profile") or []
+        if columns_profile:
+            lines.append("\n字段画像:")
+            for col in columns_profile:
+                name = col.get("name", "")
+                term = col.get("term") or "-"
+                desc = col.get("desc") or "-"
+                lines.append(f"  - {name}: {term} | {desc}")
+
+        if profile.get("ddl"):
+            lines.append(f"\n建表 DDL:\n{profile['ddl']}")
+
+        sample_data = profile.get("sample_data")
+        if sample_data:
+            if not isinstance(sample_data, str):
+                sample_data = _json.dumps(sample_data, ensure_ascii=False)
+            lines.append(f"\n样例数据:\n{sample_data[:2000]}")
+
+        return "\n".join(lines)
+
+    @staticmethod
     async def run_profiling_loop(source_id: int):
         """后台串行分析摸排主循环 (以单线程逐表异步执行)"""
         logger.info(f"[DbProfiling] Starting background profiling task for source_id: {source_id}")

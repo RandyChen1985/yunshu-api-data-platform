@@ -294,7 +294,7 @@ const currentDataSourceInfo = computed(() => {
   if (!source) return undefined
   return {
     name: source.source_name,
-    datasetsCount: source.datasets_count || 0
+    datasetsCount: source.datasets_count || 0,
   }
 })
 const noAccessToAnyDataSource = ref(false)
@@ -340,6 +340,22 @@ const fetchMetaStats = async () => {
   }
 }
 
+const tableProfilesMap = ref<Record<string, any>>({})
+const hasProfiled = computed(() => Object.keys(tableProfilesMap.value).length > 0)
+
+const fetchTableProfiles = async () => {
+  if (!selectedSourceId.value) return
+  try {
+    const res = await axios.get(`/api/portal/datasource/datasources/${selectedSourceId.value}/table-profiles`)
+    const profiles: any[] = Array.isArray(res.data) ? res.data : []
+    const map: Record<string, any> = {}
+    profiles.forEach((p: any) => { map[p.table_name] = p })
+    tableProfilesMap.value = map
+  } catch {
+    tableProfilesMap.value = {}
+  }
+}
+
 const fetchAvailableTables = async () => {
   if (!selectedSourceId.value) return
   loadingTables.value = true
@@ -352,6 +368,8 @@ const fetchAvailableTables = async () => {
     
     // 获取 V2 元数据统计
     fetchMetaStats()
+    // 异步拉取摸排画像
+    fetchTableProfiles()
 
     // 自动预取前 30 张表的字段，用于优化编辑器补全提示
     if (availableTables.value.length > 0) {
@@ -369,7 +387,11 @@ const fetchAvailableTables = async () => {
 }
 
 watch(selectedSourceId, () => {
-  selectedTables.value = []; availableTables.value = []; columnsCache.value = {}; fetchAvailableTables()
+  selectedTables.value = []
+  availableTables.value = []
+  columnsCache.value = {}
+  tableProfilesMap.value = {}
+  fetchAvailableTables()
 })
 
 const fetchColumns = async (table: string) => {
@@ -726,6 +748,56 @@ const openTableDetail = async (table: string) => {
     const colRes = await axios.post('/api/portal/meta/datasource/columns', { data_source: source?.source_name, table_name: table })
     detailColumns.value = colRes.data.columns
   } finally { detailLoading.value = false }
+}
+
+const handleTableProfileGenerate = async (table: string) => {
+  if (!selectedSourceId.value) return showToast('请先选择数据源', 'warning')
+  if (!isAiEnabled.value) return showToast('AI 功能未启用', 'warning')
+  if (!hasPerm('element:lab:generate')) return showToast('暂无 AI 生成权限', 'error')
+
+  const profile = tableProfilesMap.value[table]
+  if (!profile) return showToast(`表 [${table}] 暂无摸排画像`, 'warning')
+
+  addAiLog(`高级模式：基于表 [${table}] 摸排画像生成分析 SQL...`, 'info')
+  generating.value = true
+  currentAbortController.value = new AbortController()
+
+  try {
+    const res = await axios.post('/api/portal/lab/ai/generate-from-profile', {
+      source_id: selectedSourceId.value,
+      table_name: table,
+      mode: labMode.value,
+    }, {
+      signal: currentAbortController.value.signal,
+    })
+
+    if (res.data?.sql) {
+      if (currentTab.value && currentTab.value.sql?.trim().length > 10) {
+        createTab()
+        await nextTick()
+      }
+
+      const targetTab = currentTab.value
+      if (!targetTab) return
+
+      targetTab.sql = res.data.sql
+      targetTab.recalledContext = []
+      const label = res.data.profile_summary?.ai_term || table
+      targetTab.name = `${label} 分析`
+
+      addAiLog(`已基于摸排画像生成表 [${table}] 的分析 SQL`, 'success')
+      showToast('分析 SQL 已生成', 'success')
+      nextTick(() => sqlEditorRef.value?.focus())
+    }
+  } catch (e: any) {
+    if (e.name === 'CanceledError' || e.code === 'ERR_CANCELED') return
+    const errorMsg = e.response?.data?.detail || e.message || '未知错误'
+    addAiLog(`摸排 SQL 生成失败: ${errorMsg}`, 'error')
+    showToast('生成失败: ' + errorMsg, 'error')
+  } finally {
+    generating.value = false
+    currentAbortController.value = null
+  }
 }
 
 const fetchTablePreview = async () => {
@@ -1097,7 +1169,9 @@ onMounted(() => {
           :tables="availableTables" :loading="loadingTables" :collapsed="sidebarCollapsed" :columns-cache="columnsCache" :flash-title="flashTableTitle"
           v-model="selectedTables" v-model:auto-context="autoContext" :ai-logs="aiLogs"
           :data-source-info="currentDataSourceInfo" :is-admin="isAdmin"
+          :table-profiles-map="tableProfilesMap" :has-profiled="hasProfiled"
           @refresh="fetchAvailableTables" @table-click="openTableDetail" @fetch-columns="fetchColumns" @column-dblclick="handleColumnInsert"
+          @table-profile-generate="handleTableProfileGenerate"
           @table-ai="openTableAiSuggestion" :show-ai="isAiEnabled && hasPerm('element:lab:generate')"
           @clear-logs="clearAiLogs"
         />
