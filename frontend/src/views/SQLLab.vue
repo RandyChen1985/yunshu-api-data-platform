@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { 
-  CircleStackIcon, SparklesIcon, XMarkIcon, 
-  ChevronRightIcon, QuestionMarkCircleIcon, 
-  ArrowsPointingOutIcon, ArrowsPointingInIcon, ExclamationTriangleIcon
+  CircleStackIcon, SparklesIcon, XMarkIcon, CubeIcon,
+  ChevronRightIcon, ChevronUpIcon, ChevronDownIcon, QuestionMarkCircleIcon, 
+  ArrowsPointingOutIcon, ArrowsPointingInIcon, ExclamationTriangleIcon, BeakerIcon
 } from '@heroicons/vue/24/outline'
 
 import axios from '../utils/axios'
@@ -111,17 +111,6 @@ const dataSources = ref<DataSource[]>([])
 const selectedSourceId = ref<number | null>(null)
 const loadingSources = ref(false)
 const columnsCache = ref<Record<string, {name: string, type: string}[]>>({})
-
-const isAiProcessing = computed(() => generating.value || loadingSuggestions.value)
-const aiProcessingText = computed(() => {
-  if (generating.value) return '正在为您构建高质量 SQL 代码...'
-  if (loadingSuggestions.value) {
-    return aiContextTable.value 
-      ? `正在深度解析 [${aiContextTable.value}] 表结构，生成专属查询场景...` 
-      : '正在深度挖掘业务洞察，生成智能推荐...'
-  }
-  return 'AI 引擎正在处理中...'
-})
 
 const aiPlaceholder = computed(() => {
   if (autoContext.value) {
@@ -251,6 +240,84 @@ const loadingSuggestions = ref(false)
 const aiContextTable = ref<string | null>(null)
 const queryHistory = ref<{sql: string, params: any, timestamp: number}[]>([])
 
+type AiTaskType = 'prompt' | 'profile' | 'suggest-global' | 'suggest-table' | null
+
+const isAiProcessing = computed(() => generating.value || loadingSuggestions.value)
+const aiTaskType = ref<AiTaskType>(null)
+const profileGenerateTable = ref('')
+const showAiStatusBar = ref(false)
+const aiElapsedSec = ref(0)
+let aiStatusDelayTimer: ReturnType<typeof setTimeout> | null = null
+let aiElapsedTimer: ReturnType<typeof setInterval> | null = null
+
+const aiProcessingTitle = computed(() => {
+  switch (aiTaskType.value) {
+    case 'profile':
+      return `正在基于摸排画像生成分析 SQL`
+    case 'suggest-table':
+      return aiContextTable.value
+        ? `正在为 [${aiContextTable.value}] 生成查询场景`
+        : '正在生成专属查询场景'
+    case 'suggest-global':
+      return '正在挖掘业务洞察，生成智能推荐'
+    case 'prompt':
+    default:
+      return '正在为您构建高质量 SQL 代码'
+  }
+})
+
+const aiStatusSubtitle = computed(() => {
+  switch (aiTaskType.value) {
+    case 'profile':
+      return profileGenerateTable.value
+        ? `表 [${profileGenerateTable.value}] · 字段画像 / 样例数据 / DDL`
+        : '基于 AI 摸排画像组装上下文'
+    case 'suggest-table':
+      return `单表精准建模 · ${labMode.value === 'api' ? 'API 调试模式' : '自助取数模式'}`
+    case 'suggest-global':
+      return selectedTables.value.length > 0
+        ? `已选定 ${selectedTables.value.length} 张表作为推荐上下文`
+        : '扫描全库元数据，匹配高价值查询场景'
+    case 'prompt':
+      if (autoContext.value) return '智能关联元数据 · 语义检索相关业务资产'
+      if (selectedTables.value.length > 0) return `手动锁定 ${selectedTables.value.length} 张表作为生成上下文`
+      return '基于基础表结构进行建模分析'
+    default:
+      return 'AI 引擎处理中'
+  }
+})
+
+const latestAiLogMessage = computed(() => {
+  const logs = aiLogs.value
+  if (!logs.length) return ''
+  return logs[logs.length - 1]?.msg || ''
+})
+
+watch(isAiProcessing, (processing) => {
+  if (processing) {
+    aiBarCollapsed.value = false
+    aiElapsedSec.value = 0
+    aiElapsedTimer = setInterval(() => { aiElapsedSec.value += 1 }, 1000)
+    aiStatusDelayTimer = setTimeout(() => {
+      if (isAiProcessing.value) showAiStatusBar.value = true
+    }, 600)
+  } else {
+    if (aiStatusDelayTimer) clearTimeout(aiStatusDelayTimer)
+    aiStatusDelayTimer = null
+    if (aiElapsedTimer) clearInterval(aiElapsedTimer)
+    aiElapsedTimer = null
+    showAiStatusBar.value = false
+    aiElapsedSec.value = 0
+    aiTaskType.value = null
+    profileGenerateTable.value = ''
+  }
+})
+
+onUnmounted(() => {
+  if (aiStatusDelayTimer) clearTimeout(aiStatusDelayTimer)
+  if (aiElapsedTimer) clearInterval(aiElapsedTimer)
+})
+
 const aiExamples = [
   "查询最近 7 天注册的活跃用户数量",
   "按角色统计用户，并按创建时间降序排列",
@@ -259,6 +326,16 @@ const aiExamples = [
   "查询重复的邮箱地址及其出现次数"
 ]
 const showAiExamples = ref(false)
+const aiBarCollapsed = ref(localStorage.getItem('sqllab_ai_bar_collapsed') !== '0')
+
+watch(aiBarCollapsed, (collapsed) => {
+  localStorage.setItem('sqllab_ai_bar_collapsed', collapsed ? '1' : '0')
+})
+
+const expandAiBar = () => {
+  aiBarCollapsed.value = false
+  nextTick(() => aiInputRef.value?.focus())
+}
 
 const selectAiExample = (example: string) => {
   aiPrompt.value = example
@@ -493,6 +570,7 @@ const submitAiTask = async () => {
   
   if (!promptVal || !sourceId) return
   if (!hasPerm('element:lab:generate')) return showToast('暂无 AI 生成权限', 'error')
+  if (isAiProcessing.value) return
   
   // 始终开启智能关联提示
   if (!autoContext.value && selectedTables.value.length === 0) {
@@ -501,7 +579,8 @@ const submitAiTask = async () => {
 
   addAiLog(`启动 AI 智能 SQL 生成任务...`, 'info')
   addAiLog(`用户 Prompt: "${promptVal}"`, 'info')
-  
+
+  aiTaskType.value = 'prompt'
   generating.value = true
   currentAbortController.value = new AbortController()
   const source = dataSources.value.find(ds => ds.id === sourceId)
@@ -659,7 +738,9 @@ const applyAiFix = () => {
 
 const openSuggestionModal = async () => {
   if (!selectedSourceId.value) return showToast('请先选择数据源', 'warning')
-  
+  if (isAiProcessing.value) return
+
+  aiTaskType.value = 'suggest-global'
   loadingSuggestions.value = true
   currentAbortController.value = new AbortController()
   
@@ -700,8 +781,10 @@ const openSuggestionModal = async () => {
 const openTableAiSuggestion = async (table: string) => {
   if (!selectedSourceId.value) return
   if (!hasPerm('element:lab:generate')) return showToast('暂无智能推荐权限', 'error')
-  
+  if (isAiProcessing.value) return
+
   aiContextTable.value = table
+  aiTaskType.value = 'suggest-table'
   loadingSuggestions.value = true
   currentAbortController.value = new AbortController()
   suggestions.value = []
@@ -757,8 +840,11 @@ const handleTableProfileGenerate = async (table: string) => {
 
   const profile = tableProfilesMap.value[table]
   if (!profile) return showToast(`表 [${table}] 暂无摸排画像`, 'warning')
+  if (isAiProcessing.value) return
 
   addAiLog(`高级模式：基于表 [${table}] 摸排画像生成分析 SQL...`, 'info')
+  aiTaskType.value = 'profile'
+  profileGenerateTable.value = table
   generating.value = true
   currentAbortController.value = new AbortController()
 
@@ -973,7 +1059,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div ref="sqllabContainer" class="space-y-4 flex flex-col relative" 
+  <div ref="sqllabContainer" class="space-y-2 flex flex-col relative" 
     :class="[
       (noLabModeAccess || noAccessToAnyDataSource) ? 'h-[calc(100vh-64px)] overflow-hidden -m-8' : 'pb-20',
       isFullscreen ? 'fixed inset-0 z-[9999] bg-gray-50 p-6 overflow-auto h-screen' : ''
@@ -1003,34 +1089,38 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Global AI Processing Overlay - z-[10000] to be on top of everything -->
-    <div v-if="isAiProcessing" class="fixed inset-0 z-[10000] bg-gray-900/60 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
-      <div class="flex flex-col items-center space-y-6 bg-white/10 p-8 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-md">
-        <!-- Spinner -->
-        <div class="relative">
-          <div class="w-16 h-16 border-4 border-indigo-200/30 border-t-indigo-400 rounded-full animate-spin"></div>
-          <SparklesIcon class="w-6 h-6 text-indigo-300 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+    <!-- AI 任务状态条（非阻塞，延迟 600ms 显示） -->
+    <teleport to="body">
+      <transition enter-active-class="transition ease-out duration-300" enter-from-class="opacity-0 -translate-y-3" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition ease-in duration-200" leave-from-class="opacity-100" leave-to-class="opacity-0 -translate-y-3">
+        <div v-if="showAiStatusBar" class="fixed top-20 left-1/2 -translate-x-1/2 z-[100001] w-full max-w-2xl px-4 pointer-events-auto">
+          <div class="bg-white/95 border border-indigo-100 rounded-2xl shadow-xl backdrop-blur-md px-4 py-3 flex items-start gap-3">
+            <div class="relative shrink-0 mt-0.5">
+              <div class="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+              <SparklesIcon class="w-3.5 h-3.5 text-indigo-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-sm font-black text-indigo-900 truncate">{{ aiProcessingTitle }}</p>
+                <span class="text-[10px] text-gray-400 font-mono shrink-0 tabular-nums">{{ aiElapsedSec }}s</span>
+              </div>
+              <p class="text-[11px] text-indigo-600/80 mt-0.5 truncate">{{ aiStatusSubtitle }}</p>
+              <p
+                v-if="latestAiLogMessage"
+                class="text-[10px] text-gray-400 mt-1 truncate"
+                :title="latestAiLogMessage"
+              >{{ latestAiLogMessage }}</p>
+            </div>
+            <button
+              @click="cancelAiTask"
+              class="shrink-0 px-3 py-1.5 text-[10px] font-bold text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all flex items-center gap-1"
+            >
+              <XMarkIcon class="w-3.5 h-3.5" />
+              取消
+            </button>
+          </div>
         </div>
-        <!-- Text -->
-        <div class="text-center space-y-2">
-          <p class="text-white font-black text-lg tracking-wider">{{ aiProcessingText }}</p>
-          <p class="text-indigo-200 text-xs font-medium bg-indigo-900/50 px-3 py-1 rounded-full">
-            {{ autoContext ? '正在基于全域元数据进行智能关联分析' : (aiContextTable ? `已锁定单表上下文 [${aiContextTable}] 进行精准建模` : (selectedTables.length > 0 ? `基于 ${selectedTables.length} 张表进行多维建模分析` : '正在基于基础表结构进行建模分析')) }}
-          </p>
-        </div>
-
-        <!-- Interrupt Button -->
-        <div class="pt-4 w-full">
-          <button 
-            @click="cancelAiTask"
-            class="w-full py-2.5 bg-white/5 hover:bg-red-600/20 text-white/40 hover:text-red-400 border border-white/10 hover:border-red-500/50 rounded-xl transition-all font-bold text-xs flex items-center justify-center gap-2 group"
-          >
-            <XMarkIcon class="w-4 h-4 group-hover:rotate-90 transition-transform" />
-            取消并中断任务
-          </button>
-        </div>
-      </div>
-    </div>
+      </transition>
+    </teleport>
 
     <!-- Mode Change Toast (Sleek Top Bar) -->
     <teleport to="body">
@@ -1084,79 +1174,123 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-if="isAiEnabled && (hasPerm('element:lab:generate') || hasPerm('element:lab:analysis'))" class="relative transition-all" :class="[noAccessToAnyDataSource || noLabModeAccess ? 'blur-sm grayscale opacity-50 pointer-events-none' : '']">
-      <div class="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3 relative">
-        <SparklesIcon class="w-6 h-6 text-purple-600 mx-1" />
-        
-        <!-- Intelligent Context Toggle (NEW POSITION) -->
-        <div class="flex flex-col items-center justify-center gap-1 px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-lg shadow-sm min-w-[130px]">
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] font-black text-indigo-900 uppercase tracking-tighter" :class="!isVectorSupported ? 'opacity-40' : ''">智能关联元数据</span>
-            <button 
-              @click="toggleAutoContext"
-              class="relative inline-flex h-4 w-8 items-center rounded-full transition-colors duration-200 focus:outline-none"
-              :class="[
-                autoContext ? 'bg-indigo-600 shadow-sm shadow-indigo-200' : 'bg-gray-300',
-                !isVectorSupported ? 'cursor-not-allowed opacity-50 grayscale' : 'cursor-pointer'
-              ]"
-              :title="!isVectorSupported ? 'Redis 不支持向量搜索，此功能已禁用' : (autoContext ? '当前模式：AI 自动寻找关联表与指标' : '当前模式：仅基于手动勾选的表')"
-            >
-              <span 
-                class="inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform duration-200 shadow-sm"
-                :class="autoContext ? 'translate-x-4.5' : 'translate-x-1'"
-              />
-            </button>
-          </div>
-          <div class="flex items-center justify-center gap-1 text-[8px] font-bold text-indigo-400 w-full text-center">
-            <CubeIcon class="w-2 h-2" />
-            <span>共有 {{ metaStats.dataset_count }} 个可用元数据集</span>
-          </div>
-        </div>
-        
-        <div class="flex-1 relative flex items-center group/ai">
-          <input v-if="hasPerm('element:lab:generate')" ref="aiInputRef" v-model="aiPrompt" @keyup.enter="submitAiTask" :placeholder="aiPlaceholder" class="w-full py-2 pl-4 pr-20 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-gray-400" />
-          
-          <div class="absolute right-2 flex items-center gap-1">
-            <!-- Clear Button -->
+    <div
+      v-if="isAiEnabled && (hasPerm('element:lab:generate') || hasPerm('element:lab:analysis'))"
+      class="relative transition-all"
+      :class="[
+        noAccessToAnyDataSource || noLabModeAccess ? 'blur-sm grayscale opacity-50 pointer-events-none' : '',
+        isAiProcessing ? 'opacity-70' : ''
+      ]"
+    >
+      <!-- 收起态：单行胶囊，节省垂直空间 -->
+      <button
+        v-if="aiBarCollapsed"
+        type="button"
+        class="w-full flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm hover:border-indigo-200 hover:bg-indigo-50/30 transition-all text-left"
+        @click="expandAiBar"
+      >
+        <SparklesIcon class="w-4 h-4 text-indigo-500 shrink-0" />
+        <span class="text-xs text-gray-500 truncate flex-1">
+          {{ aiPrompt ? aiPrompt : 'AI 自然语言查表 · 点击展开' }}
+        </span>
+        <span
+          v-if="autoContext"
+          class="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-bold shrink-0"
+        >智能关联</span>
+        <ChevronDownIcon class="w-3.5 h-3.5 text-gray-400 shrink-0" />
+      </button>
+
+      <!-- 展开态：紧凑单行工具栏 -->
+      <div
+        v-else
+        class="bg-white px-2 py-1.5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-2 relative"
+        :class="isAiProcessing ? 'pointer-events-none' : ''"
+      >
+        <SparklesIcon class="w-4 h-4 text-purple-600 shrink-0" />
+
+        <Tooltip
+          :text="!isVectorSupported ? 'Redis 不支持向量搜索' : `智能关联元数据 · ${metaStats.dataset_count} 个可用数据集`"
+          position="bottom"
+        >
+          <button
+            type="button"
+            @click="toggleAutoContext"
+            class="shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-all"
+            :class="[
+              autoContext ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200',
+              !isVectorSupported ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+            ]"
+          >
+            <CubeIcon class="w-3 h-3" />
+            智能关联
+          </button>
+        </Tooltip>
+
+        <div class="flex-1 relative flex items-center min-w-0 group/ai">
+          <input
+            v-if="hasPerm('element:lab:generate')"
+            ref="aiInputRef"
+            v-model="aiPrompt"
+            :disabled="isAiProcessing"
+            @keyup.enter="submitAiTask"
+            :placeholder="isAiProcessing ? 'AI 任务进行中...' : aiPlaceholder"
+            class="w-full py-1.5 pl-3 pr-16 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+
+          <div class="absolute right-1.5 flex items-center gap-0.5">
             <Tooltip v-if="aiPrompt" text="清空输入" position="top">
               <button @click="clearAiPrompt" class="text-gray-400 hover:text-red-500 transition-colors p-1">
-                <XMarkIcon class="w-4 h-4" />
+                <XMarkIcon class="w-3.5 h-3.5" />
               </button>
             </Tooltip>
-
-            <!-- Example Dropdown Trigger -->
             <Tooltip text="试试这些提问示例" position="top" align="end">
-              <button v-if="hasPerm('element:lab:generate')" @click="showAiExamples = !showAiExamples" 
-                class="text-gray-400 hover:text-indigo-600 transition-colors p-1">
-                <QuestionMarkCircleIcon class="w-5 h-5" />
+              <button
+                v-if="hasPerm('element:lab:generate')"
+                @click="showAiExamples = !showAiExamples"
+                class="text-gray-400 hover:text-indigo-600 transition-colors p-1"
+              >
+                <QuestionMarkCircleIcon class="w-4 h-4" />
               </button>
             </Tooltip>
           </div>
 
-          <!-- Backdrop to close on outside click -->
           <div v-if="showAiExamples" @click="showAiExamples = false" class="fixed inset-0 z-[99]"></div>
-
-          <!-- AI Examples Popover (Shows Downwards) -->
-          <div v-if="showAiExamples" class="absolute top-full left-0 right-0 mt-2 z-[100] bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-top-2 duration-200">
-            <div class="px-4 py-2.5 bg-gray-50 border-b flex justify-between items-center">
-              <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">试试这些提问示例</span>
-              <button @click="showAiExamples = false" class="text-gray-400 hover:text-gray-600"><XMarkIcon class="w-4 h-4" /></button>
+          <div
+            v-if="showAiExamples"
+            class="absolute top-full left-0 right-0 mt-1.5 z-[100] bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden"
+          >
+            <div class="px-3 py-2 bg-gray-50 border-b flex justify-between items-center">
+              <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">提问示例</span>
+              <button @click="showAiExamples = false" class="text-gray-400 hover:text-gray-600"><XMarkIcon class="w-3.5 h-3.5" /></button>
             </div>
-            <div class="max-h-60 overflow-y-auto">
-              <div v-for="(example, eIdx) in aiExamples" :key="eIdx" 
+            <div class="max-h-48 overflow-y-auto">
+              <div
+                v-for="(example, eIdx) in aiExamples"
+                :key="eIdx"
                 @click="selectAiExample(example)"
-                class="px-4 py-3 text-xs text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer transition-colors border-b last:border-none flex items-center gap-3">
-                <SparklesIcon class="w-3.5 h-3.5 text-indigo-400 opacity-0 group-hover:opacity-100" />
-                {{ example }}
-              </div>
+                class="px-3 py-2 text-xs text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer border-b last:border-none"
+              >{{ example }}</div>
             </div>
           </div>
         </div>
 
-        <Tooltip v-if="labMode !== 'api'" text="基于当前数据库元数据智能推荐 12 个查询场景" position="top" align="end">
-          <button v-if="hasPerm('element:lab:generate')" @click="openSuggestionModal" class="px-5 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm transition-all hover:bg-indigo-700 shadow-sm flex items-center gap-2">
+        <Tooltip v-if="labMode !== 'api' && hasPerm('element:lab:generate')" text="智能推荐 12 个查询场景" position="top" align="end">
+          <button
+            :disabled="isAiProcessing"
+            @click="openSuggestionModal"
+            class="shrink-0 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             <SparklesIcon class="w-4 h-4" />
-            一键推荐
+          </button>
+        </Tooltip>
+
+        <Tooltip text="收起 AI 栏" position="top" align="end">
+          <button
+            type="button"
+            @click="aiBarCollapsed = true"
+            class="shrink-0 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+          >
+            <ChevronUpIcon class="w-4 h-4" />
           </button>
         </Tooltip>
       </div>

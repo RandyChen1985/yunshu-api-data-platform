@@ -121,13 +121,13 @@ const closeTagPicker = () => {
   tagSearch.value = ''
 }
 
-// 切换数据源/摸排状态时重置高级模式与标签筛选
-watch(() => props.hasProfiled, () => {
-  advancedMode.value = false
+// 摸排可用时默认开启高级模式；切换数据源时同步重置标签筛选
+watch(() => props.hasProfiled, (profiled) => {
+  advancedMode.value = !!profiled
   selectedProfileTag.value = null
   showTagPicker.value = false
   tagSearch.value = ''
-})
+}, { immediate: true })
 
 watch(advancedMode, (enabled) => {
   if (!enabled) {
