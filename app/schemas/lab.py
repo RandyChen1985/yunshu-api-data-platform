@@ -41,6 +41,11 @@ class AIGenerateRequest(BaseModel):
     tables: Optional[List[str]] = None
     mode: Optional[str] = "api" # 'api' or 'analyst'
 
+class AIProfileGenerateRequest(BaseModel):
+    source_id: int
+    table_name: str
+    mode: Optional[str] = "analyst"  # 'api' or 'analyst'
+
 class AIEditRequest(BaseModel):
     sql: str
     instruction: str
