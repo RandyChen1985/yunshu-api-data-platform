@@ -37,10 +37,12 @@ class DbProfileService:
     @staticmethod
     async def trigger_profiling_task(
         source_id: int,
-        background_tasks: BackgroundTasks
+        background_tasks: BackgroundTasks,
+        force: bool = False,
     ) -> Dict[str, Any]:
         """
         触发该数据源配置下所有表和视图的智能分析摸排后台任务（一个数据源只允许一个进行中的任务）
+        force=True 时重置全部表为待摸排并从头全量重跑（含已成功表，会重新消耗 LLM Token）
         """
         # 1. 检查数据源配置是否存在
         datasource = await DataSourceService.get_datasource(source_id)
@@ -73,9 +75,9 @@ class DbProfileService:
                     (source_id,)
                 )
                 done_count_row = await cursor.fetchone()
-                done_count = int(done_count_row[0]) if done_count_row else 0
+                done_count = 0 if force else int(done_count_row[0] if done_count_row else 0)
 
-                # 4. Upsert 主任务状态（续跑时保留已完成进度）
+                # 4. Upsert 主任务状态（续跑时保留已完成进度；全量重跑从 0 开始）
                 if existing_task:
                     await cursor.execute(
                         """
@@ -103,7 +105,7 @@ class DbProfileService:
                 sub_rows = await cursor.fetchall()
                 existing_profiles = {row[1]: row[0] for row in sub_rows}
                 await DbProfileService._bulk_init_table_profiles(
-                    cursor, source_id, tables_info, existing_profiles
+                    cursor, source_id, tables_info, existing_profiles, force=force
                 )
                 
                 await conn.commit()
@@ -201,6 +203,7 @@ class DbProfileService:
         source_id: int,
         tables_info: List[Dict[str, str]],
         existing_profiles: Dict[str, int],
+        force: bool = False,
     ) -> None:
         active_table_names = {t["name"] for t in tables_info}
 
@@ -226,11 +229,12 @@ class DbProfileService:
                 inserts.append((source_id, t_name, t_type, 0))
 
         if updates:
+            status_filter = "" if force else " AND status != 2"
             await cursor.executemany(
-                """
+                f"""
                 UPDATE db_table_profiles
                 SET status = 0, error_message = NULL, table_type = %s, updated_at = NOW()
-                WHERE connection_id = %s AND table_name = %s AND status != 2
+                WHERE connection_id = %s AND table_name = %s{status_filter}
                 """,
                 updates,
             )

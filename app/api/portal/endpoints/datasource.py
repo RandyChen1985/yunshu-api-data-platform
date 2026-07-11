@@ -259,13 +259,14 @@ async def test_datasource_connection(
 async def trigger_datasource_profile(
     source_id: int,
     background_tasks: BackgroundTasks,
+    force: bool = Query(False, description="为 true 时强制全量重跑，重置全部表并重新消耗 LLM Token"),
     user: dict = Depends(require_permission("element:datasource:edit"))
 ):
     """
     触发数据源元数据智能摸排分析任务（异步后台运行）
     """
     try:
-        task = await DbProfileService.trigger_profiling_task(source_id, background_tasks)
+        task = await DbProfileService.trigger_profiling_task(source_id, background_tasks, force=force)
         return task
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

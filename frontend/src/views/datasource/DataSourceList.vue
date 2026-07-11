@@ -616,15 +616,41 @@ const requestProfiling = (item: DataSource) => {
   })
 }
 
-const triggerProfiling = async (item: DataSource) => {
+const triggerProfiling = async (item: DataSource, force = false) => {
   try {
-    const res = await axios.post(`/api/portal/datasource/datasources/${item.id}/profile`)
-    showToast('已提交后台分析摸排任务，串行处理大模型分析中', 'success')
+    const res = await axios.post(`/api/portal/datasource/datasources/${item.id}/profile`, null, {
+      params: { force },
+    })
+    showToast(
+      force ? '已提交全量重跑摸排任务，将全部表重新分析' : '已提交后台分析摸排任务，串行处理大模型分析中',
+      'success'
+    )
     profilingTasks.value[item.id] = res.data
     startPolling(item.id)
   } catch (e: any) {
-    showToast(e.response?.data?.detail || '启动摸排失败', 'error')
+    showToast(e.response?.data?.detail || (force ? '全量重跑失败' : '启动摸排失败'), 'error')
   }
+}
+
+const hasProfilingHistory = (item: DataSource) => {
+  const task = profilingTasks.value[item.id]
+  if (!task || task.status === 1) return false
+  return task.status === 2 || task.status === 3 || (task.processed_tables || 0) > 0
+}
+
+const requestForceProfiling = (item: DataSource) => {
+  const total = profilingTasks.value[item.id]?.total_tables
+  const totalHint = total ? `${total} 张` : '所有'
+  openConfirm({
+    title: '确认全量重跑摸排',
+    message: `将对数据源 “${item.source_name}” 下 ${totalHint} 表/视图重新摸排。已完成的画像将被覆盖，每张表都会重新调用大模型，将显著消耗 Token 和时间。此操作不可撤销，确认全量重跑吗？`,
+    type: 'danger',
+    confirmText: '确认全量重跑',
+    onConfirm: () => {
+      confirmDialog.value.show = false
+      triggerProfiling(item, true)
+    }
+  })
 }
 
 const requestCancelProfiling = (item: DataSource) => {
@@ -1053,6 +1079,16 @@ onUnmounted(() => {
                             <CircleStackIcon class="w-3.5 h-3.5 shrink-0" :class="profilingTasks[item.id]?.status === 1 ? 'animate-spin' : ''" />
                             {{ profilingTasks[item.id]?.status === 1 ? '摸排中...' : '启动摸排' }}
                           </button>
+                          <!-- 全量重跑（已有摸排记录且非进行中时显示） -->
+                          <button
+                            v-if="hasProfilingHistory(item)"
+                            type="button"
+                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                            @click="requestForceProfiling(item); openMore = null"
+                          >
+                            <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
+                            全量重跑
+                          </button>
                           <!-- 画像（仅摸排完成/异常时显示） -->
                           <button
                             v-if="profilingTasks[item.id]?.status === 2 || profilingTasks[item.id]?.status === 3"
@@ -1195,6 +1231,16 @@ onUnmounted(() => {
                         >
                           <CircleStackIcon class="w-3.5 h-3.5 shrink-0" :class="profilingTasks[item.id]?.status === 1 ? 'animate-spin' : ''" />
                           {{ profilingTasks[item.id]?.status === 1 ? '摸排中...' : '启动摸排' }}
+                        </button>
+                        <!-- 全量重跑（已有摸排记录且非进行中时显示） -->
+                        <button
+                          v-if="hasProfilingHistory(item)"
+                          type="button"
+                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                          @click="requestForceProfiling(item); openMore = null"
+                        >
+                          <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
+                          全量重跑
                         </button>
                         <!-- 画像（仅摸排完成/异常时显示） -->
                         <button

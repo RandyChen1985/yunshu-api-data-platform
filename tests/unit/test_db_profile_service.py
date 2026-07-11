@@ -113,6 +113,35 @@ async def test_build_sample_query_fallback_to_star():
 
 
 @pytest.mark.asyncio
+async def test_bulk_init_table_profiles_force_resets_completed():
+    mock_cursor = AsyncMock()
+    existing_profiles = {"T1": 1, "T2": 2}
+    tables_info = [{"name": "T1", "type": "table"}, {"name": "T2", "type": "table"}]
+
+    await DbProfileService._bulk_init_table_profiles(
+        mock_cursor, 10, tables_info, existing_profiles, force=True
+    )
+
+    update_sql = mock_cursor.executemany.await_args_list[0][0][0]
+    assert "status != 2" not in update_sql
+    assert mock_cursor.executemany.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_bulk_init_table_profiles_resume_skips_completed():
+    mock_cursor = AsyncMock()
+    existing_profiles = {"T1": 1}
+    tables_info = [{"name": "T1", "type": "table"}]
+
+    await DbProfileService._bulk_init_table_profiles(
+        mock_cursor, 10, tables_info, existing_profiles, force=False
+    )
+
+    update_sql = mock_cursor.executemany.await_args_list[0][0][0]
+    assert "status != 2" in update_sql
+
+
+@pytest.mark.asyncio
 async def test_should_stop_profiling_when_cancelled():
     with patch.object(
         DbProfileService,
