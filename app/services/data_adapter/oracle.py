@@ -26,6 +26,55 @@ class OracleAdapter(DataSourceAdapter):
     def __init__(self, source_id: int):
         self.source_id = source_id
 
+    @staticmethod
+    def _materialize_value(val: Any) -> Any:
+        """在连接关闭前将 LOB 读为 Python 原生类型，避免 DPY-1001 not connected。"""
+        if val is None:
+            return None
+        if hasattr(val, "read"):
+            try:
+                data = val.read()
+                if isinstance(data, bytes):
+                    return data.decode("utf-8", errors="replace")
+                return data
+            except Exception as exc:
+                logger.warning("Failed to read Oracle LOB before connection release: %s", exc)
+                return ""
+        if isinstance(val, (bytes, bytearray)):
+            return val.decode("utf-8", errors="replace")
+        return val
+
+    @staticmethod
+    async def _materialize_value_async(val: Any) -> Any:
+        if val is None:
+            return None
+        if hasattr(val, "read"):
+            try:
+                data = val.read()
+                if inspect.isawaitable(data):
+                    data = await data
+                if isinstance(data, bytes):
+                    return data.decode("utf-8", errors="replace")
+                return data
+            except Exception as exc:
+                logger.warning("Failed to read Oracle LOB before connection release: %s", exc)
+                return ""
+        if isinstance(val, (bytes, bytearray)):
+            return val.decode("utf-8", errors="replace")
+        return val
+
+    @classmethod
+    def _materialize_rows(cls, rows: List[Any]) -> List[tuple]:
+        return [tuple(cls._materialize_value(v) for v in row) for row in rows]
+
+    @classmethod
+    async def _materialize_rows_async(cls, rows: List[Any]) -> List[tuple]:
+        materialized = []
+        for row in rows:
+            values = [await cls._materialize_value_async(v) for v in row]
+            materialized.append(tuple(values))
+        return materialized
+
     async def _run_query_internal(self, sql: str, params: Dict[str, Any] = None, fetch_all: bool = True) -> Tuple[List[Any], Any]:
         """
         Internal helper to run any SQL on Oracle, automatically handling Sync (Thick) vs Async (Thin) pools.
@@ -47,6 +96,7 @@ class OracleAdapter(DataSourceAdapter):
                     logger.debug(f"Oracle [Thin/Async] executing: {sql[:200]}...")
                     await cursor.execute(sql, params)
                     rows = await cursor.fetchall() if fetch_all else []
+                    rows = await self._materialize_rows_async(rows)
                     return rows, cursor.description
         else:
             # --- Thick Mode (Sync) ---
@@ -56,6 +106,7 @@ class OracleAdapter(DataSourceAdapter):
                         logger.debug(f"Oracle [Thick/Sync] executing: {sql[:200]}...")
                         cursor.execute(sql, params)
                         rows = cursor.fetchall() if fetch_all else []
+                        rows = OracleAdapter._materialize_rows(rows)
                         # Convert description to a portable list since cursor object might be closed
                         desc = [list(d) for d in cursor.description] if cursor.description else None
                         return rows, desc

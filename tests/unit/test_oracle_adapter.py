@@ -88,6 +88,29 @@ async def test_oracle_execute_basic(oracle_adapter, mock_resource_config):
         assert "\"ID\" ASC" in result.generated_sql
         assert result.items[0]["NAME"] == "Alice"
 
+
+def test_oracle_materialize_lob_before_connection_close():
+    """GET_DDL 返回的 CLOB 须在连接释放前物化，否则后续 read() 会 DPY-1001。"""
+
+    class FakeLob:
+        def __init__(self, text: str):
+            self._text = text
+            self._closed = False
+
+        def read(self):
+            if self._closed:
+                raise RuntimeError("not connected")
+            return self._text
+
+        def close(self):
+            self._closed = True
+
+    lob = FakeLob("CREATE TABLE FOO (ID NUMBER);")
+    assert OracleAdapter._materialize_value(lob) == "CREATE TABLE FOO (ID NUMBER);"
+    lob.close()
+    assert OracleAdapter._materialize_value(lob) == ""
+
+
 @pytest.mark.asyncio
 async def test_oracle_get_tables(oracle_adapter):
     """验证获取表列表逻辑 (包含视图)"""

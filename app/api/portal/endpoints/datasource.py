@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import List, Optional, Dict
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from typing import List, Optional, Dict, Union
 import asyncio
 import inspect
 from types import SimpleNamespace
 from app.schemas.datasource import (
     DataSourceCreate, DataSourceUpdate, DataSourceResponse, DataSourceConnectionTest,
-    DbProfileTaskResponse, DbTableProfileResponse, TableProfileIgnorePayload
+    DbProfileTaskResponse, DbTableProfileResponse, DbTableProfileSummaryResponse, TableProfileIgnorePayload
 )
 from app.services.datasource_service import DataSourceService
 from app.services.db_profile_service import DbProfileService
@@ -274,6 +274,24 @@ async def trigger_datasource_profile(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/datasources/{source_id}/profile/cancel", response_model=DbProfileTaskResponse)
+async def cancel_datasource_profile(
+    source_id: int,
+    user: dict = Depends(require_permission("element:datasource:edit"))
+):
+    """
+    中断进行中的数据源摸排任务（当前表处理完成后停止，已完成表保留）
+    """
+    try:
+        task = await DbProfileService.cancel_profiling_task(source_id)
+        return task
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to cancel profiling task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/datasources/{source_id}/profile-task", response_model=Optional[DbProfileTaskResponse])
 async def get_datasource_profile_task(
     source_id: int,
@@ -290,16 +308,43 @@ async def get_datasource_profile_task(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/datasources/{source_id}/table-profiles", response_model=List[DbTableProfileResponse])
+@router.get(
+    "/datasources/{source_id}/table-profiles/{table_name}",
+    response_model=DbTableProfileResponse,
+)
+async def get_datasource_table_profile(
+    source_id: int,
+    table_name: str,
+    user: dict = Depends(require_api_key),
+):
+    """获取单张表的完整摸排画像（按需加载）"""
+    try:
+        profile = await DbProfileService.get_table_profile(source_id, table_name)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Table profile not found")
+        return profile
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get table profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/datasources/{source_id}/table-profiles",
+    response_model=List[Union[DbTableProfileSummaryResponse, DbTableProfileResponse]],
+)
 async def list_datasource_table_profiles(
     source_id: int,
-    user: dict = Depends(require_api_key)
+    summary: bool = Query(True, description="为 true 时仅返回轻量摘要，不含 DDL/样例/字段画像"),
+    status: Optional[int] = Query(None, description="按摸排状态过滤，例如 2=已完成"),
+    user: dict = Depends(require_api_key),
 ):
     """
-    获取数据源的表画像画像草稿列表（支持元数据导入查看，所以允许 require_api_key 访问）
+    获取数据源的表画像草稿列表（支持元数据导入查看，所以允许 require_api_key 访问）
     """
     try:
-        profiles = await DbProfileService.list_table_profiles(source_id)
+        profiles = await DbProfileService.list_table_profiles(source_id, summary=summary, status=status)
         return profiles
     except Exception as e:
         logger.error(f"Failed to list table profiles: {e}")
