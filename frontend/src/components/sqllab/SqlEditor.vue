@@ -11,7 +11,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { autocompletion } from '@codemirror/autocomplete'
 import { keymap, EditorView } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
-import { format as formatSqlLib } from 'sql-formatter'
+import { formatLabSqlSafe } from '../../utils/formatLabSql'
 import { useToast } from '../../composables/useToast'
 import Tooltip from '../common/Tooltip.vue'
 import LabShortcutsModal from './LabShortcutsModal.vue'
@@ -295,37 +295,11 @@ const formatSql = () => {
   if (!sql.value.trim()) return
   try {
     const source = props.dataSources.find(ds => ds.id === props.selectedSourceId)
-    const dialect = source?.source_type === 'clickhouse' ? 'mariadb' : 'mysql' 
-    
-    let formatted = sql.value
-    
-    // Protection Pattern for Jinja2 tags
-    const tags: string[] = []
-    const tagRegex = /(\{%.*?%\}|\{\{.*?\}\}|\{#.*?#\})/gs
-    
-    // 1. Replace tags with placeholders
-    formatted = formatted.replace(tagRegex, (match) => {
-      tags.push(match)
-      return `__JINJA_TAG_${tags.length - 1}__`
-    })
-
-    // 2. Format SQL
-    formatted = formatSqlLib(formatted, { 
-      language: dialect as any, 
-      keywordCase: 'upper', 
-      linesBetweenQueries: 2 
-    })
-
-    // 3. Restore tags
-    tags.forEach((tag, i) => {
-      formatted = formatted.replace(`__JINJA_TAG_${i}__`, tag)
-    })
-
-    sql.value = formatted
+    sql.value = formatLabSqlSafe(sql.value, source?.source_type || 'mysql')
     showToast('SQL 已美化', 'success')
-  } catch (e: any) { 
+  } catch (e: any) {
     console.error('SQL Format Error:', e)
-    showToast(`格式化失败: ${e.message || '未知语法错误'}`, 'warning') 
+    showToast(`格式化失败: ${e.message || '未知语法错误'}`, 'warning')
   }
 }
 

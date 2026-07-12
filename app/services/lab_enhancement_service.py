@@ -324,6 +324,20 @@ class LabEnhancementService:
     # ---------- JOIN Path Recommendation ----------
 
     @staticmethod
+    def _normalize_join_type(raw: Optional[str]) -> str:
+        """元数据 join_type 可能是 LEFT 或 LEFT JOIN，统一为 LEFT/INNER/..."""
+        s = (raw or "LEFT").upper().strip()
+        s = re.sub(r"\s+JOIN\s*$", "", s)
+        if s in ("LEFT", "RIGHT", "INNER", "FULL", "CROSS"):
+            return s
+        return "LEFT"
+
+    @staticmethod
+    def _build_join_snippet(join_type: str, target_table: str, condition: str) -> str:
+        jtype = LabEnhancementService._normalize_join_type(join_type)
+        return f"{jtype} JOIN {target_table} ON {condition}"
+
+    @staticmethod
     async def get_join_paths(source_id: int, tables: List[str]) -> List[Dict[str, Any]]:
         if len(tables) < 2:
             return []
@@ -350,13 +364,20 @@ class LabEnhancementService:
                 rels = await cursor.fetchall()
 
         paths: List[Dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
         for rel in rels:
             src = (rel.get("source_table") or "").lower()
             tgt = (rel.get("target_table") or "").lower()
             if src in table_set and tgt in table_set:
-                jtype = (rel.get("join_type") or "LEFT").upper()
                 cond = rel.get("join_condition") or ""
-                snippet = f"{jtype} JOIN {rel['target_table']} ON {cond}"
+                key = (src, tgt, cond.strip().lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                jtype = LabEnhancementService._normalize_join_type(rel.get("join_type"))
+                snippet = LabEnhancementService._build_join_snippet(
+                    rel.get("join_type"), rel["target_table"], cond
+                )
                 paths.append({
                     "source_table": rel["source_table"],
                     "target_table": rel["target_table"],

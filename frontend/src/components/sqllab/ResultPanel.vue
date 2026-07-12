@@ -8,6 +8,7 @@ import LabResultStats from './LabResultStats.vue'
 import LabResultPivot from './LabResultPivot.vue'
 import LabResultCompare from './LabResultCompare.vue'
 import LabVirtualTable from './LabVirtualTable.vue'
+import LabAiFeedbackBar from './LabAiFeedbackBar.vue'
 import { useToast } from '../../composables/useToast'
 
 const { showToast } = useToast()
@@ -47,6 +48,8 @@ const props = defineProps<{
   previewOffset?: number
   totalCount?: number | null
   compareSnapshot?: PreviewResult | null
+  lastAiPrompt?: string
+  aiFeedbackRating?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +62,7 @@ const emit = defineEmits<{
   (e: 'ai-fix-error'): void
   (e: 'page-change', offset: number): void
   (e: 'pin-baseline'): void
+  (e: 'ai-feedback', rating: 1 | 2): void
 }>()
 
 const sortColumn = ref<string | null>(null)
@@ -200,7 +204,16 @@ defineExpose({ scrollToTop })
           :class="activeSubTab==='explain' ? 'text-amber-600 border-b-2 border-amber-600 bg-white' : 'text-gray-500 hover:text-gray-700'">执行计划</button>
       </div>
 
-      <div v-if="result && activeSubTab === 'result'" class="flex items-center gap-2">
+      <div v-if="activeSubTab === 'result'" class="flex items-center gap-2">
+        <LabAiFeedbackBar
+          v-if="lastAiPrompt && hasPerm('element:lab:generate')"
+          :prompt="lastAiPrompt"
+          :rating="aiFeedbackRating ?? null"
+          compact
+          :class="result ? 'mr-2 pr-2 border-r border-gray-200' : ''"
+          @rate="(r) => emit('ai-feedback', r)"
+        />
+        <template v-if="result">
         <Tooltip text="将当前结果设为对比基准" position="bottom" align="end">
           <button @click="emit('pin-baseline')" class="flex items-center px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-bold border border-violet-100 hover:bg-violet-100">
             固定基准
@@ -225,13 +238,14 @@ defineExpose({ scrollToTop })
             异步导出
           </button>
         </Tooltip>
+        </template>
       </div>
     </div>
     
     <div class="flex-1 min-h-0 bg-white">
       <div v-if="activeSubTab==='result'" class="h-full flex flex-col">
         <div v-if="result" class="bg-blue-50/50 border-b border-blue-100 px-4 py-1.5 flex items-center justify-between gap-3 text-[11px] text-blue-700">
-          <div class="flex items-center gap-4 font-bold min-w-0">
+          <div class="flex items-center gap-4 font-bold min-w-0 flex-wrap">
             <span>耗时: {{ result.execution_time_ms.toFixed(2) }}ms</span>
             <span>返回: {{ result.rows.length }} 行</span>
             <span v-if="totalCount != null" class="text-blue-500/80">共约 {{ totalCount }} 行</span>

@@ -23,10 +23,11 @@ import ResizeHandle from '../components/common/ResizeHandle.vue'
 import AnalysisChat from '../components/sqllab/AnalysisChat.vue'
 import LabSavedQueriesPanel from '../components/sqllab/LabSavedQueriesPanel.vue'
 import LabSqlDiff from '../components/sqllab/LabSqlDiff.vue'
-import LabRagExplainBanner from '../components/sqllab/LabRagExplainBanner.vue'
+import LabAiFeedbackBar from '../components/sqllab/LabAiFeedbackBar.vue'
 import LabPublishSuccessModal from '../components/sqllab/LabPublishSuccessModal.vue'
 import LabApiTestModal from '../components/sqllab/LabApiTestModal.vue'
 import Tooltip from '../components/common/Tooltip.vue'
+import { formatLabSqlSafe } from '../utils/formatLabSql'
 
 const { showToast } = useToast()
 const router = useRouter()
@@ -55,7 +56,6 @@ const pendingRunSql = ref<string | undefined>(undefined)
 const showPublishCheck = ref(false)
 const publishCheckResult = ref<any>(null)
 const sensitiveWarnings = ref<{ level: string; message: string }[]>([])
-const lastAiPrompt = ref('')
 const aiAutoRun = ref(localStorage.getItem('sqllab_ai_auto_run') === '1')
 const showPublishSuccess = ref(false)
 const publishedResourceKey = ref('')
@@ -132,6 +132,8 @@ interface QueryTab {
   emptyTestPassed: boolean;
   recalledContext?: any[];
   lastAiPrompt?: string;
+  aiFeedbackRating?: number | null;
+  aiFeedbackBarDismissed?: boolean;
   compareSnapshot?: PreviewResult | null;
 }
 
@@ -155,11 +157,13 @@ const aiPlaceholder = computed(() => {
 
 const createTab = (initialSql?: string) => {
   const id = Math.random().toString(36).substring(7)
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
   tabs.value.push({
-    id, name: `查询 ${tabs.value.length + 1}`, sql: initialSql || '',
+    id, name: `查询 ${tabs.value.length + 1}`, sql: initialSql ? formatLabSqlSafe(initialSql, source?.source_type || 'mysql') : '',
     testParams: { user_pattern: '%' }, result: null, error: null, executing: false, activeSubTab: 'result',
     aiContent: '', optimizedSql: '', aiDetectedParams: [], columnLabels: {}, emptyTestPassed: false,
-    recalledContext: [], compareSnapshot: null,
+    recalledContext: [], compareSnapshot: null, lastAiPrompt: undefined, aiFeedbackRating: null,
+    aiFeedbackBarDismissed: false,
   })
   activeTabIndex.value = tabs.value.length - 1
 }
@@ -190,7 +194,14 @@ const closeOtherTabs = (index: number) => {
 // --- Sources & Metadata ---
 
 const saveTabs = () => {
-  const data = tabs.value.map(t => ({ name: t.name, sql: t.sql, testParams: t.testParams }))
+  const data = tabs.value.map(t => ({
+    name: t.name,
+    sql: t.sql,
+    testParams: t.testParams,
+    lastAiPrompt: t.lastAiPrompt || '',
+    aiFeedbackRating: t.aiFeedbackRating ?? null,
+    aiFeedbackBarDismissed: !!t.aiFeedbackBarDismissed,
+  }))
   localStorage.setItem('sql_lab_tabs', JSON.stringify(data))
 }
 
@@ -205,6 +216,9 @@ const loadTabs = () => {
           result: null, error: null, executing: false, activeSubTab: 'result',
           aiContent: '', optimizedSql: '', aiDetectedParams: [], columnLabels: {}, emptyTestPassed: false,
           recalledContext: [], compareSnapshot: null,
+          lastAiPrompt: d.lastAiPrompt || undefined,
+          aiFeedbackRating: d.aiFeedbackRating ?? null,
+          aiFeedbackBarDismissed: !!d.aiFeedbackBarDismissed,
         })
       })
     } catch (e) { createTab() }
@@ -746,32 +760,51 @@ const handleAiEdit = async (instruction: string) => {
       mode: labMode.value,
       tables: selectedTables.value,
     })
-    sqlDiffData.value = { original: currentTab.value.sql, modified: res.data.sql }
+    sqlDiffData.value = { original: currentTab.value.sql, modified: formatSqlForCurrentSource(res.data.sql) }
     showSqlDiff.value = true
   } catch (e: any) {
     showToast(e.response?.data?.detail || 'AI 编辑失败', 'error')
   }
 }
 
+const formatSqlForCurrentSource = (sql: string) => {
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+  return formatLabSqlSafe(sql, source?.source_type || 'mysql')
+}
+
+const dismissAiFeedbackBar = () => {
+  if (currentTab.value) currentTab.value.aiFeedbackBarDismissed = true
+}
+
 const applySqlDiff = () => {
-  if (currentTab.value) currentTab.value.sql = sqlDiffData.value.modified
+  if (currentTab.value) currentTab.value.sql = formatSqlForCurrentSource(sqlDiffData.value.modified)
   showSqlDiff.value = false
   showToast('已应用 SQL 修改', 'success')
 }
 
-const submitAiFeedback = async (rating: number) => {
-  if (!currentTab.value) return
+const submitAiFeedback = async (rating: 1 | 2) => {
+  if (!currentTab.value?.lastAiPrompt) return
+  if (currentTab.value.aiFeedbackRating != null) return
   try {
     await axios.post('/api/portal/lab/ai/feedback', {
       source_id: selectedSourceId.value,
-      prompt: lastAiPrompt.value || currentTab.value.lastAiPrompt,
+      prompt: currentTab.value.lastAiPrompt,
       generated_sql: currentTab.value.sql,
       rating,
       execution_success: !!currentTab.value.result && !currentTab.value.error,
     })
+    currentTab.value.aiFeedbackRating = rating
     showToast(rating === 2 ? '感谢反馈！' : '已记录，我们会持续改进', 'info')
-  } catch { /* ignore */ }
+  } catch {
+    showToast('反馈提交失败', 'error')
+  }
 }
+
+const showAiFeedbackBar = computed(() =>
+  !!currentTab.value?.lastAiPrompt
+  && hasPerm('element:lab:generate')
+  && !currentTab.value?.aiFeedbackBarDismissed
+)
 
 const loadSavedQuery = (q: any) => {
   if (currentTab.value) {
@@ -812,9 +845,15 @@ const saveHistoryAsTemplate = async (item: { sql: string; params: any; timestamp
 }
 
 const insertJoinSnippet = (snippet: string) => {
-  if (currentTab.value) {
-    currentTab.value.sql = currentTab.value.sql.trim() + '\n' + snippet
+  if (!currentTab.value) return
+  const line = snippet.trim()
+  if (!line) return
+  const existing = currentTab.value.sql.trim()
+  if (existing.split('\n').some(l => l.trim() === line)) {
+    showToast('该 JOIN 片段已在编辑器中', 'info')
+    return
   }
+  currentTab.value.sql = existing ? `${existing}\n${line}` : line
 }
 
 const saveAnalysisSession = async (payload: { title: string; messages: any[] }) => {
@@ -925,10 +964,11 @@ const submitAiTask = async () => {
       const targetTab = currentTab.value
       if (!targetTab) return
 
-      targetTab.sql = res.data.sql
+      targetTab.sql = formatSqlForCurrentSource(res.data.sql)
       targetTab.recalledContext = res.data.recalled_context || []
       targetTab.lastAiPrompt = promptVal
-      lastAiPrompt.value = promptVal
+      targetTab.aiFeedbackRating = null
+      targetTab.aiFeedbackBarDismissed = false
       targetTab.name = promptVal.slice(0, 10) + (promptVal.length > 10 ? '...' : '')
       
       const debug = res.data.debug_info
@@ -962,7 +1002,7 @@ const submitAiTask = async () => {
             })
             const fixed = fixRes.data.content?.match(/```sql([\s\S]*?)```/)?.[1]?.trim()
             if (fixed) {
-              targetTab.sql = fixed
+              targetTab.sql = formatSqlForCurrentSource(fixed)
               showToast('已自动纠错并重试', 'info')
               await runQuery(undefined, true)
             }
@@ -1053,7 +1093,7 @@ const handleAiFixError = async () => {
 
 const applyAiFix = () => {
   if (currentTab.value?.optimizedSql) {
-    currentTab.value.sql = currentTab.value.optimizedSql
+    currentTab.value.sql = formatSqlForCurrentSource(currentTab.value.optimizedSql)
     currentTab.value.activeSubTab = 'result'
     nextTick(() => {
       // 1. Focus Editor
@@ -1199,7 +1239,7 @@ const handleTableProfileGenerate = async (table: string) => {
       const targetTab = currentTab.value
       if (!targetTab) return
 
-      targetTab.sql = res.data.sql
+      targetTab.sql = formatSqlForCurrentSource(res.data.sql)
       targetTab.recalledContext = []
       const label = res.data.profile_summary?.ai_term || table
       targetTab.name = `${label} 分析`
@@ -1664,7 +1704,27 @@ onMounted(() => {
       </div>
     </div>
 
-    <LabRagExplainBanner v-if="currentTab?.recalledContext?.length" :recalled-context="currentTab.recalledContext" />
+    <div
+      v-if="showAiFeedbackBar"
+      class="shrink-0 px-4 py-2 bg-gradient-to-r from-indigo-50 to-violet-50 border-b border-indigo-100 flex items-center justify-between gap-3"
+    >
+      <LabAiFeedbackBar
+        :prompt="currentTab?.lastAiPrompt"
+        :rating="currentTab?.aiFeedbackRating ?? null"
+        @rate="submitAiFeedback"
+      />
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-[10px] text-indigo-400 hidden md:inline">本 Tab 内有效，切换/刷新后仍可评价</span>
+        <button
+          type="button"
+          class="p-1 rounded-md text-indigo-400 hover:text-indigo-700 hover:bg-indigo-100/80"
+          title="关闭"
+          @click="dismissAiFeedbackBar"
+        >
+          <XMarkIcon class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
 
     <div class="flex flex-col flex-1 min-h-0 space-y-4" :class="{ 'blur-sm grayscale opacity-50 pointer-events-none': noAccessToAnyDataSource || noLabModeAccess }">
       <div class="flex flex-row overflow-hidden" :style="{ height: isFullscreen ? 'calc(100vh - 350px)' : `${editorHeight}px` }">
@@ -1707,10 +1767,13 @@ onMounted(() => {
           :is-ai-enabled="isAiEnabled" :sql="currentTab.sql" :recalled-context="currentTab.recalledContext"
           :preview-limit="previewLimit" :preview-offset="previewOffset" :total-count="totalCount"
           :compare-snapshot="currentTab.compareSnapshot"
+          :last-ai-prompt="currentTab.lastAiPrompt"
+          :ai-feedback-rating="currentTab.aiFeedbackRating ?? null"
           class="flex-1"
           @clear-result="handleClearResult" @apply-ai-fix="applyAiFix" @open-analysis="openAiAnalysis" @export-excel="exportToExcel"
           @export-async="exportAsync" @ai-fix-error="handleAiFixError" @page-change="handlePageChange"
           @pin-baseline="pinBaseline"
+          @ai-feedback="submitAiFeedback"
         />
       </div>
     </div>
@@ -1765,12 +1828,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-if="currentTab?.sql && lastAiPrompt" class="fixed bottom-6 right-6 z-50 flex gap-2 bg-white shadow-lg rounded-full border px-3 py-2 text-xs">
-      <span class="text-gray-500 self-center">AI 生成满意吗？</span>
-      <button class="px-2 py-1 hover:bg-green-50 rounded" @click="submitAiFeedback(2)">👍</button>
-      <button class="px-2 py-1 hover:bg-red-50 rounded" @click="submitAiFeedback(1)">👎</button>
-    </div>
-    
+
     <!-- AI Meta Error Modal -->
     <div v-if="showAiErrorModal" class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" @click.self="showAiErrorModal = false">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all animate-in zoom-in duration-200">
