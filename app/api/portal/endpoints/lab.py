@@ -12,6 +12,7 @@ from app.schemas.lab import (
     PreviewRequest, PublishRequest, AIRequest, AIGenerateRequest, AIProfileGenerateRequest,
     ExplainRequest, RiskCheckRequest, ExportRequest, SavedQueryCreate, SavedQueryUpdate,
     AiFeedbackRequest, AnalysisSessionSave, PublishCheckRequest, AIEditRequest,
+    TableFavoriteUpsert,
 )
 
 from app.services.ai_service import AIService
@@ -957,6 +958,71 @@ async def delete_analysis_session(
     if not ok:
         raise HTTPException(status_code=404, detail="会话不存在")
     return {"success": True}
+
+
+@router.get("/table-favorites")
+async def list_table_favorites(
+    source_id: int,
+    user=Depends(require_permission("element:lab:generate")),
+):
+    return await LabEnhancementService.list_table_favorites(int(user["user_id"]), source_id)
+
+
+@router.put("/table-favorites")
+async def upsert_table_favorite(
+    request: TableFavoriteUpsert,
+    user=Depends(require_permission("element:lab:generate")),
+):
+    fid = await LabEnhancementService.upsert_table_favorite(int(user["user_id"]), request.model_dump())
+    return {"id": fid}
+
+
+@router.delete("/table-favorites")
+async def delete_table_favorite(
+    source_id: int,
+    table_name: str,
+    user=Depends(require_permission("element:lab:generate")),
+):
+    ok = await LabEnhancementService.delete_table_favorite(
+        int(user["user_id"]), source_id, table_name
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="收藏不存在")
+    return {"success": True}
+
+
+@router.get("/table-search")
+async def search_lab_tables(
+    source_id: int,
+    q: Optional[str] = None,
+    tag: Optional[str] = None,
+    scope: str = Query("all", description="all | profiled | favorites | recent"),
+    recent: Optional[str] = Query(None, description="scope=recent 时逗号分隔的表名"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(40, ge=1, le=100),
+    user=Depends(require_permission("element:lab:generate")),
+):
+    """表探索器：关键词搜索摸排画像（分页）"""
+    recent_tables = [t.strip() for t in recent.split(",") if t.strip()] if recent else None
+    return await LabEnhancementService.search_tables(
+        int(user["user_id"]),
+        source_id,
+        q=q,
+        tag=tag,
+        scope=scope,
+        recent_tables=recent_tables,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/table-tags")
+async def list_lab_table_tags(
+    source_id: int,
+    user=Depends(require_permission("element:lab:generate")),
+):
+    """表探索器：聚合 AI 标签"""
+    return await LabEnhancementService.aggregate_table_tags(source_id)
 
 
 @router.post("/publish-check")

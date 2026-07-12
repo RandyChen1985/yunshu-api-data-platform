@@ -3,7 +3,8 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { 
   PlayIcon, ClockIcon, CommandLineIcon, SparklesIcon, CircleStackIcon, TrashIcon, XMarkIcon,
   ListBulletIcon, PencilSquareIcon, CalendarDaysIcon, QuestionMarkCircleIcon,
-  BeakerIcon, TableCellsIcon, StopIcon, EyeIcon, BoltIcon, BookmarkIcon, CodeBracketIcon, AdjustmentsHorizontalIcon
+  BeakerIcon, TableCellsIcon, StopIcon, EyeIcon, BoltIcon, BookmarkIcon, CodeBracketIcon, AdjustmentsHorizontalIcon,
+  RectangleStackIcon,
 } from '@heroicons/vue/24/outline'
 import { Codemirror } from 'vue-codemirror'
 import { sql as sqlLang, MySQL, PostgreSQL, MariaSQL } from '@codemirror/lang-sql'
@@ -47,6 +48,7 @@ const props = defineProps<{
   unmask?: boolean
   isAdmin?: boolean
   sensitiveWarnings?: { level: string; message: string }[]
+  hasProfiled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -63,6 +65,7 @@ const emit = defineEmits<{
   (e: 'open-publish'): void
   (e: 'restore-history', item: HistoryItem): void
   (e: 'delete-history', index: number): void
+  (e: 'clear-history'): void
   (e: 'toggle-sidebar'): void
   (e: 'run-empty-test'): void
   (e: 'format-sql'): void
@@ -70,13 +73,14 @@ const emit = defineEmits<{
   (e: 'run-explain'): void
   (e: 'update:unmask', value: boolean): void
   (e: 'open-saved-queries'): void
+  (e: 'open-table-explorer'): void
   (e: 'ai-edit-sql', instruction: string): void
   (e: 'save-history-as-template', item: HistoryItem): void
 }>()
 
 // Types
 interface DataSource { id: number; source_name: string; source_type: string }
-interface QueryTab { id: string; name: string; sql: string; testParams: Record<string, any>; result: any; error: any; executing: boolean; activeSubTab: 'result' | 'ai' | 'explain', emptyTestPassed: boolean }
+interface QueryTab { id: string; name: string; sql: string; testParams: Record<string, any>; result: any; error: any; executing: boolean; activeSubTab: 'result' | 'ai' | 'explain' | 'debug', emptyTestPassed: boolean }
 
 const { showToast } = useToast()
 
@@ -174,6 +178,7 @@ const extensions = computed(() => [
 const showAiEditModal = ref(false)
 const aiEditInstruction = ref('')
 const showHistory = ref(false)
+const historyDropdownRef = ref<HTMLElement | null>(null)
 const showShortcuts = ref(false)
 const showSnippets = ref(false)
 const showParamPresets = ref(false)
@@ -309,9 +314,43 @@ const clearSql = () => {
 }
 
 const handleRestoreHistory = (item: HistoryItem) => { emit('restore-history', item); showHistory.value = false }
+
+const onHistoryOutsideClick = (e: MouseEvent) => {
+  if (!showHistory.value) return
+  const el = historyDropdownRef.value
+  if (el && !el.contains(e.target as Node)) showHistory.value = false
+}
+
+const onHistoryEscape = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && showHistory.value) showHistory.value = false
+}
+
+watch(showHistory, (open) => {
+  if (open) {
+    setTimeout(() => {
+      document.addEventListener('click', onHistoryOutsideClick)
+      document.addEventListener('keydown', onHistoryEscape)
+    }, 0)
+  } else {
+    document.removeEventListener('click', onHistoryOutsideClick)
+    document.removeEventListener('keydown', onHistoryEscape)
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onHistoryOutsideClick)
+  document.removeEventListener('keydown', onHistoryEscape)
+})
 const handleDeleteHistory = (idx: number, event: Event) => {
   event.stopPropagation()
   emit('delete-history', idx)
+}
+const handleClearHistory = (event: Event) => {
+  event.stopPropagation()
+  if (!props.history.length) return
+  if (!window.confirm(`确定清空全部 ${props.history.length} 条查询历史？此操作不可恢复。`)) return
+  emit('clear-history')
+  showHistory.value = false
 }
 const startRename = (tab: QueryTab) => {
   editingTabId.value = tab.id; editName.value = tab.name;
@@ -475,6 +514,9 @@ defineExpose({ focus })
         </div>
       </div>
       <div class="flex items-center space-x-2">
+        <Tooltip v-if="hasProfiled" text="表探索器 (⌘⇧T)" position="bottom">
+          <button type="button" @click="emit('open-table-explorer')" class="p-1.5 text-gray-500 hover:text-indigo-600"><RectangleStackIcon class="w-4 h-4" /></button>
+        </Tooltip>
         <Tooltip text="SQL 片段库" position="bottom">
           <button @click="showSnippets = true" class="p-1.5 text-gray-500 hover:text-blue-600"><CodeBracketIcon class="w-4 h-4" /></button>
         </Tooltip>
@@ -487,11 +529,30 @@ defineExpose({ focus })
         <Tooltip text="我的查询（云端保存）" position="bottom">
           <button @click="emit('open-saved-queries')" class="p-1.5 text-gray-500 hover:text-blue-600"><BookmarkIcon class="w-4 h-4" /></button>
         </Tooltip>
-        <div class="relative">
+        <div ref="historyDropdownRef" class="relative">
           <Tooltip text="查看最近 20 条查询历史" position="bottom">
-            <button @click="showHistory = !showHistory" class="p-1.5 text-gray-500 hover:text-blue-600"><ClockIcon class="w-4 h-4" /></button>
+            <button type="button" @click.stop="showHistory = !showHistory" class="p-1.5 text-gray-500 hover:text-blue-600" :class="showHistory ? 'text-blue-600 bg-blue-50 rounded-lg' : ''"><ClockIcon class="w-4 h-4" /></button>
           </Tooltip>
           <div v-if="showHistory" class="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-2xl border z-[100] py-2 max-h-96 overflow-y-auto custom-scrollbar">
+            <div class="px-4 py-2 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+              <span class="text-[11px] font-bold text-gray-500">最近 {{ history.length }} 条</span>
+              <div class="flex items-center gap-1">
+                <button
+                  v-if="history.length > 0"
+                  type="button"
+                  class="text-[11px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-md transition-colors"
+                  @click="handleClearHistory"
+                >清空全部</button>
+                <button
+                  type="button"
+                  class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                  title="关闭"
+                  @click="showHistory = false"
+                >
+                  <XMarkIcon class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
             <div v-if="history.length === 0" class="px-4 py-8 text-center text-gray-400 text-xs italic">暂无查询历史</div>
             <div v-for="(item, idx) in history" :key="idx" @click="handleRestoreHistory(item)" 
               class="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-none group/hist">
