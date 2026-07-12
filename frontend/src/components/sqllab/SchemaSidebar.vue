@@ -61,6 +61,7 @@ const formatTime = (ts: number) => {
 }
 
 const search = ref('')
+const tablesSortBy = ref<'name' | 'confidence_desc' | 'confidence_asc'>('name')
 const expandedTables = ref<string[]>([])
 const selectedProfileTag = ref<string | null>(null)
 const showTagPicker = ref(false)
@@ -127,6 +128,7 @@ const closeTagPicker = () => {
 // 摸排可用时默认开启高级模式；切换数据源时同步重置标签筛选
 watch(() => props.hasProfiled, (profiled) => {
   advancedMode.value = !!profiled
+  tablesSortBy.value = profiled ? 'confidence_desc' : 'name'
   selectedProfileTag.value = null
   showTagPicker.value = false
   tagSearch.value = ''
@@ -148,6 +150,28 @@ watch(showTagPicker, (open) => {
   }
   setTimeout(() => document.addEventListener('click', handler), 0)
 })
+
+const getConfidenceScore = (tableName: string) =>
+  props.tableProfilesMap?.[tableName]?.confidence_score ?? 0
+
+const sortTableList = (list: any[]) => {
+  const sorted = [...list]
+  if (tablesSortBy.value === 'confidence_desc') {
+    return sorted.sort(
+      (a, b) =>
+        getConfidenceScore(getTableName(b)) - getConfidenceScore(getTableName(a)) ||
+        getTableName(a).localeCompare(getTableName(b)),
+    )
+  }
+  if (tablesSortBy.value === 'confidence_asc') {
+    return sorted.sort(
+      (a, b) =>
+        getConfidenceScore(getTableName(a)) - getConfidenceScore(getTableName(b)) ||
+        getTableName(a).localeCompare(getTableName(b)),
+    )
+  }
+  return sorted.sort((a, b) => getTableName(a).localeCompare(getTableName(b)))
+}
 
 const filteredTables = computed(() => {
   let list = props.tables
@@ -172,19 +196,15 @@ const filteredTables = computed(() => {
         )
       })
     }
-    return list
+    return sortTableList(list)
   }
 
-  if (!search.value) return list
+  if (!search.value) return sortTableList(list)
   const query = search.value.toLowerCase()
-  return list.filter(t => getTableName(t).toLowerCase().includes(query))
+  return sortTableList(list.filter(t => getTableName(t).toLowerCase().includes(query)))
 })
 
 const handleTableDblClick = (table: string) => {
-  if (advancedMode.value) {
-    emit('table-profile-generate', table)
-    return
-  }
   emit('table-dblclick', table)
 }
 
@@ -317,12 +337,24 @@ const handleDragStart = (event: DragEvent, name: string) => {
         </div>
         
         <div class="p-2 border-b space-y-2">
-          <ClearableInput
-            v-model="search"
-            wrapper-class="border-0 bg-gray-100 rounded"
-            input-class="px-2 py-1 text-xs"
-            :placeholder="advancedMode ? '搜索表名/术语/描述...' : '搜索资产...'"
-          />
+          <div class="flex gap-2">
+            <ClearableInput
+              v-model="search"
+              wrapper-class="bg-gray-100 rounded flex-1 min-w-0"
+              input-class="px-2 py-1 text-xs"
+              :placeholder="advancedMode ? '搜索表名/术语/描述...' : '搜索资产...'"
+            />
+            <select
+              v-if="hasProfiled"
+              v-model="tablesSortBy"
+              class="shrink-0 w-[88px] text-[10px] border border-gray-200 bg-gray-100 rounded px-1.5 py-1 text-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
+              title="排序方式"
+            >
+              <option value="confidence_desc">置信度↓</option>
+              <option value="confidence_asc">置信度↑</option>
+              <option value="name">表名</option>
+            </select>
+          </div>
 
           <!-- 高级模式：紧凑标签 + 弹出面板（避免内联展开占满侧边栏） -->
           <div v-if="advancedMode && availableTags.length > 0" class="relative" @click.stop>
@@ -476,10 +508,8 @@ const handleDragStart = (event: DragEvent, name: string) => {
             <div
               v-else
               @click="toggleExpand(typeof t === 'string' ? t : t.name, $event)"
-              @dblclick="handleTableDblClick(typeof t === 'string' ? t : t.name)"
               draggable="true"
               @dragstart="handleDragStart($event, typeof t === 'string' ? t : t.name)"
-              title="双击基于摸排画像生成分析 SQL"
               class="px-2.5 py-2 rounded cursor-pointer transition-colors group border border-transparent"
               :class="[
                 modelValue.includes(typeof t === 'string' ? t : t.name) ? 'border-indigo-200 bg-indigo-50/40' : 'hover:bg-blue-50/40 hover:border-blue-100',
@@ -542,6 +572,14 @@ const handleDragStart = (event: DragEvent, name: string) => {
                     class="p-1 text-gray-300 hover:text-blue-600 rounded opacity-0 group-hover:opacity-100 transition-all"
                     title="查看资产画像"
                   ><EyeIcon class="w-3 h-3" /></button>
+                  <button
+                    v-if="showAi"
+                    @click.stop="emit('table-ai', typeof t === 'string' ? t : t.name)"
+                    class="p-1 text-gray-300 hover:text-purple-600 hover:bg-purple-50 rounded opacity-0 group-hover:opacity-100 mr-0.5 transition-all"
+                    title="针对该表进行 AI 建模"
+                  >
+                    <SparklesIcon class="w-3 h-3" />
+                  </button>
                   <component :is="isExpanded(typeof t === 'string' ? t : t.name) ? ChevronDownIcon : ChevronRightIcon" class="w-3 h-3 text-gray-300" />
                 </div>
               </div>

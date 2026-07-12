@@ -295,16 +295,88 @@ const finishRename = (idx: number) => {
 const jinjaExample1 = '{{ user_id }}'
 const jinjaExample2 = '{% if ... %}'
 
-const handleRunQuery = () => {
-  let querySql = sql.value.trim()
-  if (editorView.value) {
-    const selection = editorView.value.state.selection.main
-    if (!selection.empty) {
-      const selectedText = editorView.value.state.sliceDoc(selection.from, selection.to).trim()
-      if (selectedText) { querySql = selectedText; showToast('执行选中的 SQL 片段', 'info') }
+const isSemicolonOutsideString = (doc: string, index: number): boolean => {
+  if (doc[index] !== ';') return false
+  let inSingle = false
+  let inDouble = false
+  for (let i = 0; i < index; i++) {
+    const ch = doc[i]
+    if (ch === "'" && !inDouble) {
+      if (inSingle && doc[i + 1] === "'") {
+        i++
+        continue
+      }
+      inSingle = !inSingle
+    } else if (ch === '"' && !inSingle) {
+      if (inDouble && doc[i + 1] === '"') {
+        i++
+        continue
+      }
+      inDouble = !inDouble
     }
   }
-  if (!querySql) { showToast('请输入 SQL', 'warning'); return }
+  return !inSingle && !inDouble
+}
+
+const extractStatementAtCursor = (doc: string, cursor: number): string => {
+  const pos = Math.max(0, Math.min(cursor, doc.length))
+  let start = 0
+  let end = doc.length
+
+  for (let i = pos - 1; i >= 0; i--) {
+    if (isSemicolonOutsideString(doc, i)) {
+      start = i + 1
+      break
+    }
+  }
+  for (let i = pos; i < doc.length; i++) {
+    if (isSemicolonOutsideString(doc, i)) {
+      end = i
+      break
+    }
+  }
+
+  return doc.slice(start, end).trim()
+}
+
+type SqlRunScope = 'selection' | 'cursor' | 'all'
+
+const resolveSqlToRun = (): { sql: string; scope: SqlRunScope } => {
+  const fullSql = sql.value.trim()
+  if (!editorView.value) {
+    return { sql: fullSql, scope: 'all' }
+  }
+
+  const view = editorView.value
+  const selection = view.state.selection.main
+
+  if (!selection.empty) {
+    const selectedText = view.state.sliceDoc(selection.from, selection.to).trim()
+    if (selectedText) {
+      return { sql: selectedText, scope: 'selection' }
+    }
+  }
+
+  const doc = view.state.doc.toString()
+  const statementAtCursor = extractStatementAtCursor(doc, selection.from)
+  if (statementAtCursor && statementAtCursor !== fullSql) {
+    return { sql: statementAtCursor, scope: 'cursor' }
+  }
+
+  return { sql: fullSql, scope: 'all' }
+}
+
+const handleRunQuery = () => {
+  const { sql: querySql, scope } = resolveSqlToRun()
+  if (!querySql) {
+    showToast('请输入 SQL', 'warning')
+    return
+  }
+  if (scope === 'selection') {
+    showToast('执行选中的 SQL 片段', 'info')
+  } else if (scope === 'cursor') {
+    showToast('执行光标所在 SQL 语句', 'info')
+  }
   emit('run-query', querySql)
 }
 
@@ -398,9 +470,10 @@ defineExpose({ focus })
           <button @click="clearSql" class="p-1.5 text-gray-500 hover:text-red-600"><TrashIcon class="w-4 h-4" /></button>
         </Tooltip>
 
-        <Tooltip text="执行查询 (Ctrl+Enter)" position="bottom" align="end">
+        <Tooltip text="执行查询 (Ctrl/Cmd+Enter)；有选中执行选中，否则执行光标处语句" position="bottom" align="end">
           <button 
             v-if="hasPerm('element:lab:generate')" 
+            @mousedown.prevent
             @click="handleRunQuery" 
             :disabled="executing" 
             class="px-4 py-1.5 bg-blue-600 text-white rounded-md text-sm font-medium flex items-center disabled:opacity-50 transition-all shadow-sm hover:bg-blue-700"
