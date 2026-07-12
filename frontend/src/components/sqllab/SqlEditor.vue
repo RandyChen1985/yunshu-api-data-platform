@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { 
   PlayIcon, ClockIcon, CommandLineIcon, SparklesIcon, CircleStackIcon, TrashIcon, XMarkIcon,
   ListBulletIcon, PencilSquareIcon, CalendarDaysIcon, QuestionMarkCircleIcon,
-  BeakerIcon, TableCellsIcon, StopIcon, EyeIcon, BoltIcon, BookmarkIcon
+  BeakerIcon, TableCellsIcon, StopIcon, EyeIcon, BoltIcon, BookmarkIcon, CodeBracketIcon, AdjustmentsHorizontalIcon
 } from '@heroicons/vue/24/outline'
 import { Codemirror } from 'vue-codemirror'
 import { sql as sqlLang, MySQL, PostgreSQL, MariaSQL } from '@codemirror/lang-sql'
@@ -14,11 +14,18 @@ import { indentWithTab } from '@codemirror/commands'
 import { format as formatSqlLib } from 'sql-formatter'
 import { useToast } from '../../composables/useToast'
 import Tooltip from '../common/Tooltip.vue'
+import LabShortcutsModal from './LabShortcutsModal.vue'
+import LabSnippetsPanel from './LabSnippetsPanel.vue'
+import LabParamPresetsPanel from './LabParamPresetsPanel.vue'
 
-// Types
-interface DataSource { id: number; source_name: string; source_type: string }
-interface QueryTab { id: string; name: string; sql: string; testParams: Record<string, any>; result: any; error: any; executing: boolean; activeSubTab: 'result' | 'ai' | 'explain', emptyTestPassed: boolean }
-interface HistoryItem { sql: string; params: any; timestamp: number }
+interface HistoryItem {
+  sql: string
+  params: any
+  timestamp: number
+  execution_time_ms?: number
+  row_count?: number
+  success?: boolean
+}
 
 const props = defineProps<{
   tabs: QueryTab[]
@@ -64,7 +71,12 @@ const emit = defineEmits<{
   (e: 'update:unmask', value: boolean): void
   (e: 'open-saved-queries'): void
   (e: 'ai-edit-sql', instruction: string): void
+  (e: 'save-history-as-template', item: HistoryItem): void
 }>()
+
+// Types
+interface DataSource { id: number; source_name: string; source_type: string }
+interface QueryTab { id: string; name: string; sql: string; testParams: Record<string, any>; result: any; error: any; executing: boolean; activeSubTab: 'result' | 'ai' | 'explain', emptyTestPassed: boolean }
 
 const { showToast } = useToast()
 
@@ -162,6 +174,9 @@ const extensions = computed(() => [
 const showAiEditModal = ref(false)
 const aiEditInstruction = ref('')
 const showHistory = ref(false)
+const showShortcuts = ref(false)
+const showSnippets = ref(false)
+const showParamPresets = ref(false)
 const showRecallPanel = ref(false)
 const showJinjaHelpModal = ref(false)
 const showParamsPanel = ref(props.labMode === 'api')
@@ -247,6 +262,34 @@ watch(sqlVariables, (newVars) => {
 }, { immediate: true })
 
 const handleEditorReady = (payload: any) => { editorView.value = payload.view }
+
+const insertAtCursor = (text: string) => {
+  const view = editorView.value
+  if (!view) {
+    sql.value = (sql.value ? sql.value + '\n' : '') + text
+    return
+  }
+  const pos = view.state.selection.main.head
+  view.dispatch({
+    changes: { from: pos, insert: text },
+    selection: { anchor: pos + text.length },
+  })
+  view.focus()
+}
+
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !(e.target as HTMLElement)?.matches('input, textarea')) {
+    showShortcuts.value = true
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
+const formatHistoryTime = (ts: number) => {
+  const d = new Date(ts)
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 const formatSql = () => {
   if (!sql.value.trim()) return
@@ -458,6 +501,15 @@ defineExpose({ focus })
         </div>
       </div>
       <div class="flex items-center space-x-2">
+        <Tooltip text="SQL 片段库" position="bottom">
+          <button @click="showSnippets = true" class="p-1.5 text-gray-500 hover:text-blue-600"><CodeBracketIcon class="w-4 h-4" /></button>
+        </Tooltip>
+        <Tooltip v-if="labMode === 'api'" text="参数预设" position="bottom">
+          <button @click="showParamPresets = true" class="p-1.5 text-gray-500 hover:text-blue-600"><AdjustmentsHorizontalIcon class="w-4 h-4" /></button>
+        </Tooltip>
+        <Tooltip text="快捷键 (?)" position="bottom">
+          <button @click="showShortcuts = true" class="p-1.5 text-gray-500 hover:text-blue-600"><QuestionMarkCircleIcon class="w-4 h-4" /></button>
+        </Tooltip>
         <Tooltip text="我的查询（云端保存）" position="bottom">
           <button @click="emit('open-saved-queries')" class="p-1.5 text-gray-500 hover:text-blue-600"><BookmarkIcon class="w-4 h-4" /></button>
         </Tooltip>
@@ -468,11 +520,23 @@ defineExpose({ focus })
           <div v-if="showHistory" class="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-2xl border z-[100] py-2 max-h-96 overflow-y-auto custom-scrollbar">
             <div v-if="history.length === 0" class="px-4 py-8 text-center text-gray-400 text-xs italic">暂无查询历史</div>
             <div v-for="(item, idx) in history" :key="idx" @click="handleRestoreHistory(item)" 
-              class="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-none flex justify-between items-start group/hist">
-              <code class="text-xs text-gray-600 line-clamp-2 font-mono flex-1 mr-4">{{ item.sql }}</code>
-              <button @click="handleDeleteHistory(idx, $event)" class="text-gray-300 hover:text-red-500 opacity-0 group-hover/hist:opacity-100 transition-all p-1">
-                <TrashIcon class="w-3.5 h-3.5" />
-              </button>
+              class="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-none group/hist">
+              <div class="flex justify-between items-start gap-2">
+                <code class="text-xs text-gray-600 line-clamp-2 font-mono flex-1">{{ item.sql }}</code>
+                <button @click="handleDeleteHistory(idx, $event)" class="text-gray-300 hover:text-red-500 opacity-0 group-hover/hist:opacity-100 transition-all p-1 shrink-0">
+                  <TrashIcon class="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div class="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
+                <span>{{ formatHistoryTime(item.timestamp) }}</span>
+                <span v-if="item.execution_time_ms != null">{{ item.execution_time_ms.toFixed(0) }}ms</span>
+                <span v-if="item.row_count != null">{{ item.row_count }} 行</span>
+                <span :class="item.success === false ? 'text-red-500' : 'text-green-600'">{{ item.success === false ? '失败' : '成功' }}</span>
+                <button
+                  class="ml-auto text-indigo-600 hover:underline opacity-0 group-hover/hist:opacity-100"
+                  @click.stop="emit('save-history-as-template', item)"
+                >另存模板</button>
+              </div>
             </div>
           </div>
         </div>
@@ -837,6 +901,15 @@ defineExpose({ focus })
         </div>
       </div>
     </div>
+    <LabShortcutsModal :open="showShortcuts" @close="showShortcuts = false" />
+    <LabSnippetsPanel :open="showSnippets" @close="showSnippets = false" @insert="insertAtCursor" />
+    <LabParamPresetsPanel
+      :open="showParamPresets"
+      :source-id="selectedSourceId"
+      :current-params="testParams"
+      @close="showParamPresets = false"
+      @apply="(p) => { testParams = p }"
+    />
   </div>
 </template>
 

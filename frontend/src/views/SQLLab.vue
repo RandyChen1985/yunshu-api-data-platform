@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { 
   CircleStackIcon, SparklesIcon, XMarkIcon, CubeIcon,
   ChevronRightIcon, ChevronUpIcon, ChevronDownIcon, QuestionMarkCircleIcon, 
@@ -22,9 +23,13 @@ import ResizeHandle from '../components/common/ResizeHandle.vue'
 import AnalysisChat from '../components/sqllab/AnalysisChat.vue'
 import LabSavedQueriesPanel from '../components/sqllab/LabSavedQueriesPanel.vue'
 import LabSqlDiff from '../components/sqllab/LabSqlDiff.vue'
+import LabRagExplainBanner from '../components/sqllab/LabRagExplainBanner.vue'
+import LabPublishSuccessModal from '../components/sqllab/LabPublishSuccessModal.vue'
+import LabApiTestModal from '../components/sqllab/LabApiTestModal.vue'
 import Tooltip from '../components/common/Tooltip.vue'
 
 const { showToast } = useToast()
+const router = useRouter()
 const { isFullscreen, toggleFullscreen } = useFullscreen()
 
 // --- State ---
@@ -51,6 +56,12 @@ const showPublishCheck = ref(false)
 const publishCheckResult = ref<any>(null)
 const sensitiveWarnings = ref<{ level: string; message: string }[]>([])
 const lastAiPrompt = ref('')
+const aiAutoRun = ref(localStorage.getItem('sqllab_ai_auto_run') === '1')
+const showPublishSuccess = ref(false)
+const publishedResourceKey = ref('')
+const showApiTestModal = ref(false)
+const publishSqlDiff = ref({ original: '', modified: '' })
+const showPublishSqlDiff = ref(false)
 
 const showTableDetailModal = ref(false)
 const detailTable = ref('')
@@ -121,6 +132,7 @@ interface QueryTab {
   emptyTestPassed: boolean;
   recalledContext?: any[];
   lastAiPrompt?: string;
+  compareSnapshot?: PreviewResult | null;
 }
 
 // --- Tab Management ---
@@ -147,7 +159,7 @@ const createTab = (initialSql?: string) => {
     id, name: `查询 ${tabs.value.length + 1}`, sql: initialSql || '',
     testParams: { user_pattern: '%' }, result: null, error: null, executing: false, activeSubTab: 'result',
     aiContent: '', optimizedSql: '', aiDetectedParams: [], columnLabels: {}, emptyTestPassed: false,
-    recalledContext: []
+    recalledContext: [], compareSnapshot: null,
   })
   activeTabIndex.value = tabs.value.length - 1
 }
@@ -192,7 +204,7 @@ const loadTabs = () => {
           id: Math.random().toString(36).substring(7), name: d.name, sql: d.sql, testParams: d.testParams,
           result: null, error: null, executing: false, activeSubTab: 'result',
           aiContent: '', optimizedSql: '', aiDetectedParams: [], columnLabels: {}, emptyTestPassed: false,
-          recalledContext: []
+          recalledContext: [], compareSnapshot: null,
         })
       })
     } catch (e) { createTab() }
@@ -258,7 +270,7 @@ const suggestions = ref<{title: string, description: string, sql: string}[]>([])
 const loadingSuggestions = ref(false)
 const aiContextTable = ref<string | null>(null)
 const selectedSuggestionIdx = ref(0)
-const queryHistory = ref<{sql: string, params: any, timestamp: number}[]>([])
+const queryHistory = ref<{sql: string, params: any, timestamp: number, execution_time_ms?: number, row_count?: number, success?: boolean}[]>([])
 
 const selectedSuggestion = computed(() => suggestions.value[selectedSuggestionIdx.value] ?? null)
 
@@ -549,10 +561,19 @@ const fetchColumns = async (table: string) => {
 const handleColumnInsert = (colName: string) => { if (currentTab.value) currentTab.value.sql += ` ${colName}` }
 const handleTabRename = (idx: number, name: string) => { if (tabs.value[idx]) tabs.value[idx].name = name }
 
-const saveToHistory = (newSql: string, newParams: any) => {
-  if (queryHistory.value.length > 0 && queryHistory.value[0]?.sql === newSql) return
-  queryHistory.value.unshift({ sql: newSql, params: { ...newParams }, timestamp: Date.now() })
-  if (queryHistory.value.length > 20) queryHistory.value = queryHistory.value.slice(0, 20)
+watch(aiAutoRun, (v) => localStorage.setItem('sqllab_ai_auto_run', v ? '1' : '0'))
+
+const saveToHistory = (newSql: string, newParams: any, meta?: { execution_time_ms?: number; row_count?: number; success?: boolean }) => {
+  if (queryHistory.value.length > 0 && queryHistory.value[0]?.sql === newSql && meta?.success !== false) return
+  queryHistory.value.unshift({
+    sql: newSql,
+    params: { ...newParams },
+    timestamp: Date.now(),
+    execution_time_ms: meta?.execution_time_ms,
+    row_count: meta?.row_count,
+    success: meta?.success ?? true,
+  })
+  if (queryHistory.value.length > 30) queryHistory.value = queryHistory.value.slice(0, 30)
   localStorage.setItem('sql_lab_history', JSON.stringify(queryHistory.value))
 }
 const loadHistory = () => {
@@ -638,10 +659,15 @@ const runQuery = async (overrideSql?: string, skipRisk = false) => {
 
     currentTab.value.result = res.data
     totalCount.value = res.data.total_count ?? null
-    saveToHistory(sqlToRun, currentTab.value.testParams)
+    saveToHistory(sqlToRun, currentTab.value.testParams, {
+      execution_time_ms: res.data.execution_time_ms,
+      row_count: res.data.rows?.length,
+      success: true,
+    })
   } catch (e: any) {
     if (e.name === 'CanceledError' || e.code === 'ERR_CANCELED') return
     currentTab.value.error = e.response?.data?.message || e.response?.data?.detail || e.message
+    saveToHistory(sqlToRun, currentTab.value.testParams, { success: false })
   } finally {
     currentTab.value.executing = false
     queryAbortController.value = null
@@ -755,6 +781,34 @@ const loadSavedQuery = (q: any) => {
   }
   showSavedQueries.value = false
   showToast(`已加载「${q.name}」`, 'success')
+}
+
+const pinBaseline = () => {
+  if (!currentTab.value?.result) return
+  if (currentTab.value.compareSnapshot) {
+    currentTab.value.compareSnapshot = null
+    showToast('已清除对比基准', 'info')
+  } else {
+    currentTab.value.compareSnapshot = JSON.parse(JSON.stringify(currentTab.value.result))
+    showToast('已固定当前结果为对比基准', 'success')
+  }
+}
+
+const saveHistoryAsTemplate = async (item: { sql: string; params: any; timestamp?: number }) => {
+  if (!selectedSourceId.value) return
+  const name = `历史 ${new Date(item.timestamp || Date.now()).toLocaleString()}`
+  try {
+    await axios.post('/api/portal/lab/saved-queries', {
+      name,
+      sql: item.sql,
+      source_id: selectedSourceId.value,
+      lab_mode: labMode.value,
+      test_params: item.params,
+    })
+    showToast('已另存为云端查询模板', 'success')
+  } catch {
+    showToast('保存失败', 'error')
+  }
 }
 
 const insertJoinSnippet = (snippet: string) => {
@@ -895,7 +949,26 @@ const submitAiTask = async () => {
 
       addAiLog(`AI 生成 SQL 成功，耗时 ${res.headers?.['x-process-time'] || 'N/A'}ms`, 'success')
       aiPrompt.value = ''
-      showToast('SQL 已生成', 'success') 
+      showToast('SQL 已生成', 'success')
+
+      if (aiAutoRun.value) {
+        await runQuery(undefined, true)
+        if (targetTab.error && isAiEnabled.value) {
+          try {
+            const fixRes = await axios.post('/api/portal/lab/ai/fix-error', {
+              sql: targetTab.sql,
+              error: targetTab.error,
+              source_id: sourceId,
+            })
+            const fixed = fixRes.data.content?.match(/```sql([\s\S]*?)```/)?.[1]?.trim()
+            if (fixed) {
+              targetTab.sql = fixed
+              showToast('已自动纠错并重试', 'info')
+              await runQuery(undefined, true)
+            }
+          } catch { /* ignore */ }
+        }
+      }
     }
   } catch (e: any) { 
     const errorMsg = e.response?.data?.detail || e.message || '未知错误'
@@ -1263,6 +1336,9 @@ const proceedOpenPublish = () => {
   const vars = new Set<string>()
   const matches = sql.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)
   if (matches) matches.forEach(m => vars.add(m.replace(/\{\{\s*|\s*\}\}/g, '')))
+
+  const inferred = publishCheckResult.value?.checks?.find((c: any) => c.name === 'param_schema')?.params || []
+  inferred.forEach((p: any) => vars.add(p.name))
   
   const allParams = new Set([...currentTab.value.aiDetectedParams, ...vars])
   selectedFilters.value = [...allParams]
@@ -1307,8 +1383,9 @@ const handlePublish = async () => {
   try {
     await axios.post('/api/portal/lab/publish', payload)
     const key = publishForm.value.resource_key
-    showToast(`API 发布成功：${key}，可在资源管理中查看`, 'success')
+    publishedResourceKey.value = key
     showPublishModal.value = false
+    showPublishSuccess.value = true
   } catch (e: any) {
     showToast('发布失败: ' + (e.response?.data?.detail || e.message), 'error')
   } finally {
@@ -1326,7 +1403,19 @@ const mockJsonResponse = computed(() => {
   return { code: 200, message: "success", data: { items: [sampleItem], total: 1, page: 1, size: 20 }, trace_id: "req_xxxxxx" }
 })
 
-onMounted(() => { 
+watch(() => publishForm.value.resource_key, async (key) => {
+  if (!key || key.length < 3) return
+  try {
+    const res = await axios.get('/api/portal/meta/resources')
+    const list = Array.isArray(res.data) ? res.data : res.data?.items || []
+    const found = list.find((r: any) => r.resource_key === key)
+    if (found?.custom_sql && currentTab.value && found.custom_sql !== currentTab.value.sql) {
+      publishSqlDiff.value = { original: found.custom_sql, modified: currentTab.value.sql }
+    }
+  } catch { /* ignore */ }
+})
+
+onMounted(() => {
   fetchDataSources(); loadHistory(); loadTabs(); checkVectorSupport()
   
   if (labMode.value === 'api' && !hasApiMode.value && hasAnalystMode.value) {
@@ -1496,6 +1585,15 @@ onMounted(() => {
           </button>
         </Tooltip>
 
+        <Tooltip text="生成后自动试跑（失败则 AI 纠错一次）" position="top">
+          <button
+            type="button"
+            @click="aiAutoRun = !aiAutoRun"
+            class="shrink-0 px-2 py-1 rounded-full text-[10px] font-bold border transition-all"
+            :class="aiAutoRun ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-100 text-gray-500 border-gray-200'"
+          >自动试跑</button>
+        </Tooltip>
+
         <div class="flex-1 relative flex items-center min-w-0 group/ai">
           <input
             v-if="hasPerm('element:lab:generate')"
@@ -1566,6 +1664,8 @@ onMounted(() => {
       </div>
     </div>
 
+    <LabRagExplainBanner v-if="currentTab?.recalledContext?.length" :recalled-context="currentTab.recalledContext" />
+
     <div class="flex flex-col flex-1 min-h-0 space-y-4" :class="{ 'blur-sm grayscale opacity-50 pointer-events-none': noAccessToAnyDataSource || noLabModeAccess }">
       <div class="flex flex-row overflow-hidden" :style="{ height: isFullscreen ? 'calc(100vh - 350px)' : `${editorHeight}px` }">
         <SchemaSidebar 
@@ -1593,6 +1693,7 @@ onMounted(() => {
             :is-admin="isAdmin" :sensitive-warnings="sensitiveWarnings"
             @create-tab="createTab" @close-tab="closeTab" @close-all-tabs="closeAllTabs" @close-other-tabs="closeOtherTabs" @update-tab-name="handleTabRename" @run-query="runQuery" @run-ai-check="runAiAction" @open-publish="openPublishModal" @restore-history="restoreHistory" @delete-history="deleteHistory" @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed" @run-empty-test="runEmptyParamTest"
             @cancel-query="cancelQuery" @run-explain="runExplain" @open-saved-queries="showSavedQueries = true" @ai-edit-sql="handleAiEdit"
+            @save-history-as-template="saveHistoryAsTemplate"
           />
         </div>
       </div>
@@ -1605,9 +1706,11 @@ onMounted(() => {
           :ai-content="currentTab.aiContent" :optimized-sql="currentTab.optimizedSql" :lab-mode="labMode" :has-perm="hasPerm"
           :is-ai-enabled="isAiEnabled" :sql="currentTab.sql" :recalled-context="currentTab.recalledContext"
           :preview-limit="previewLimit" :preview-offset="previewOffset" :total-count="totalCount"
+          :compare-snapshot="currentTab.compareSnapshot"
           class="flex-1"
           @clear-result="handleClearResult" @apply-ai-fix="applyAiFix" @open-analysis="openAiAnalysis" @export-excel="exportToExcel"
           @export-async="exportAsync" @ai-fix-error="handleAiFixError" @page-change="handlePageChange"
+          @pin-baseline="pinBaseline"
         />
       </div>
     </div>
@@ -1616,6 +1719,23 @@ onMounted(() => {
 
     <LabSavedQueriesPanel v-if="showSavedQueries" :source-id="selectedSourceId" :lab-mode="labMode" :current-sql="currentTab?.sql || ''" :test-params="currentTab?.testParams || {}" @load="loadSavedQuery" @close="showSavedQueries = false" />
     <LabSqlDiff v-if="showSqlDiff" :original="sqlDiffData.original" :modified="sqlDiffData.modified" @apply="applySqlDiff" @close="showSqlDiff = false" />
+
+    <LabPublishSuccessModal
+      :open="showPublishSuccess"
+      :resource-key="publishedResourceKey"
+      :lab-sql="currentTab?.sql || ''"
+      @close="showPublishSuccess = false"
+      @test="showPublishSuccess = false; showApiTestModal = true"
+      @edit="router.push(`/dashboard/resources/${publishedResourceKey}`); showPublishSuccess = false"
+    />
+    <LabApiTestModal :open="showApiTestModal" :resource-key="publishedResourceKey" @close="showApiTestModal = false" />
+    <LabSqlDiff
+      v-if="showPublishSqlDiff && publishSqlDiff.original"
+      :original="publishSqlDiff.original"
+      :modified="publishSqlDiff.modified"
+      @close="showPublishSqlDiff = false"
+      @apply="showPublishSqlDiff = false"
+    />
 
     <div v-if="showRiskConfirm" class="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -1684,6 +1804,12 @@ onMounted(() => {
           <div class="space-y-1">
             <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">资源标识 (Key)</label>
             <input v-model="publishForm.resource_key" placeholder="例如: user.list" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-mono transition-all" />
+            <button
+              v-if="publishSqlDiff.original"
+              type="button"
+              class="mt-2 text-xs text-violet-600 font-bold hover:underline"
+              @click="showPublishSqlDiff = true"
+            >与已存在 API 的 SQL 存在差异，点击查看</button>
           </div>
           <div class="space-y-1">
             <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">接口名称</label>

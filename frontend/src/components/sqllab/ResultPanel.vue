@@ -4,6 +4,10 @@ import { PlayIcon, SparklesIcon, TableCellsIcon, DocumentTextIcon, ArrowsRightLe
 import MarkdownIt from 'markdown-it'
 import Tooltip from '../common/Tooltip.vue'
 import LabQuickChart from './LabQuickChart.vue'
+import LabResultStats from './LabResultStats.vue'
+import LabResultPivot from './LabResultPivot.vue'
+import LabResultCompare from './LabResultCompare.vue'
+import LabVirtualTable from './LabVirtualTable.vue'
 import { useToast } from '../../composables/useToast'
 
 const { showToast } = useToast()
@@ -42,6 +46,7 @@ const props = defineProps<{
   previewLimit?: number
   previewOffset?: number
   totalCount?: number | null
+  compareSnapshot?: PreviewResult | null
 }>()
 
 const emit = defineEmits<{
@@ -53,11 +58,12 @@ const emit = defineEmits<{
   (e: 'export-async'): void
   (e: 'ai-fix-error'): void
   (e: 'page-change', offset: number): void
+  (e: 'pin-baseline'): void
 }>()
 
 const sortColumn = ref<string | null>(null)
 const sortDirection = ref<'asc' | 'desc' | null>(null)
-type ResultViewMode = 'table' | 'text' | 'transpose' | 'chart'
+type ResultViewMode = 'table' | 'text' | 'transpose' | 'chart' | 'pivot' | 'stats'
 const resultViewMode = ref<ResultViewMode>('table')
 const columnFilter = ref('')
 const expandedCell = ref<{ row: number; col: number; value: string } | null>(null)
@@ -162,6 +168,15 @@ const copyColumn = async (colIdx: number) => {
   }
 }
 
+const useVirtualScroll = computed(() => sortedRows.value.length > 60)
+
+const onCellClick = (payload: { row: number; col: number; value: string }) => {
+  const v = payload.value
+  if ((v.startsWith('{') && v.endsWith('}')) || (v.startsWith('[') && v.endsWith(']'))) {
+    expandedCell.value = { row: payload.row, col: payload.col, value: v }
+  }
+}
+
 const resultArea = ref<HTMLElement | null>(null)
 const scrollToTop = () => { resultArea.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
@@ -186,6 +201,11 @@ defineExpose({ scrollToTop })
       </div>
 
       <div v-if="result && activeSubTab === 'result'" class="flex items-center gap-2">
+        <Tooltip text="将当前结果设为对比基准" position="bottom" align="end">
+          <button @click="emit('pin-baseline')" class="flex items-center px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-bold border border-violet-100 hover:bg-violet-100">
+            固定基准
+          </button>
+        </Tooltip>
         <Tooltip text="基于当前结果集进行深度 AI 数据洞察" position="bottom" align="end">
           <button v-if="labMode === 'analyst' && isAiEnabled && hasPerm('element:lab:analysis')" @click="emit('open-analysis')" 
             class="flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold border border-indigo-100 hover:bg-indigo-100 transition-all">
@@ -250,6 +270,18 @@ defineExpose({ scrollToTop })
               <button
                 type="button"
                 class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                :class="resultViewMode === 'pivot' ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-50'"
+                @click="resultViewMode = 'pivot'"
+              >透视</button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                :class="resultViewMode === 'stats' ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-50'"
+                @click="resultViewMode = 'stats'"
+              >统计</button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
                 :class="resultViewMode === 'transpose' ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-50'"
                 @click="resultViewMode = 'transpose'"
               >
@@ -281,9 +313,27 @@ defineExpose({ scrollToTop })
           </div>
         </div>
         
-        <div v-else-if="result" class="overflow-auto flex-1 min-h-0">
-          <!-- 表格视图 -->
-          <table v-if="resultViewMode === 'table'" class="min-w-full divide-y divide-gray-200 border-separate" style="border-spacing: 0">
+        <div v-else-if="result" class="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <LabResultCompare
+            v-if="compareSnapshot"
+            :baseline="compareSnapshot"
+            :current="result"
+            @clear-baseline="emit('pin-baseline')"
+          />
+
+          <LabVirtualTable
+            v-if="resultViewMode === 'table' && useVirtualScroll"
+            :columns="result.columns"
+            :rows="sortedRows"
+            :sort-column="sortColumn"
+            :sort-direction="sortDirection"
+            @header-click="handleHeaderClick"
+            @copy-column="copyColumn"
+            @cell-click="onCellClick"
+          />
+
+          <div v-else-if="resultViewMode === 'table'" class="overflow-auto flex-1 min-h-0">
+          <table class="min-w-full divide-y divide-gray-200 border-separate" style="border-spacing: 0">
             <thead class="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th v-for="(c, ci) in result.columns" :key="c.name" @click="handleHeaderClick(c.name)" @contextmenu.prevent="copyColumn(ci)" class="px-6 py-3 text-left text-xs font-bold text-gray-500 border-b border-gray-200 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" title="右键复制整列">
@@ -301,11 +351,16 @@ defineExpose({ scrollToTop })
               </tr>
             </tbody>
           </table>
+          </div>
 
           <LabQuickChart v-else-if="resultViewMode === 'chart'" :columns="result.columns" :rows="sortedRows" />
 
+          <LabResultPivot v-else-if="resultViewMode === 'pivot'" :columns="result.columns" :rows="sortedRows" />
+
+          <LabResultStats v-else-if="resultViewMode === 'stats'" :columns="result.columns" :rows="sortedRows" />
+
           <!-- 文本视图（TSV） -->
-          <div v-else-if="resultViewMode === 'text'" class="h-full flex flex-col">
+          <div v-else-if="resultViewMode === 'text'" class="h-full flex flex-col overflow-auto">
             <div class="flex justify-end px-4 py-2 border-b border-gray-100 bg-gray-50/50">
               <button type="button" class="text-[11px] text-blue-600 hover:text-blue-800 font-medium" @click="copyTextOutput">复制文本</button>
             </div>
@@ -313,7 +368,8 @@ defineExpose({ scrollToTop })
           </div>
 
           <!-- 行转列视图 -->
-          <table v-else class="min-w-full divide-y divide-gray-200 border-separate" style="border-spacing: 0">
+          <div v-else class="overflow-auto flex-1 min-h-0">
+          <table class="min-w-full divide-y divide-gray-200 border-separate" style="border-spacing: 0">
             <thead class="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th
@@ -339,6 +395,7 @@ defineExpose({ scrollToTop })
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
 
         <div v-if="result && totalCount != null && totalPages > 1" class="border-t px-4 py-2 flex items-center justify-center gap-3 text-xs bg-gray-50">
