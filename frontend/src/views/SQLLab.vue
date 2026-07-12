@@ -3,7 +3,8 @@ import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { 
   CircleStackIcon, SparklesIcon, XMarkIcon, CubeIcon,
   ChevronRightIcon, ChevronUpIcon, ChevronDownIcon, QuestionMarkCircleIcon, 
-  ArrowsPointingOutIcon, ArrowsPointingInIcon, ExclamationTriangleIcon, BeakerIcon
+  ArrowsPointingOutIcon, ArrowsPointingInIcon, ExclamationTriangleIcon, BeakerIcon,
+  ClipboardDocumentIcon, PlayIcon,
 } from '@heroicons/vue/24/outline'
 
 import axios from '../utils/axios'
@@ -189,7 +190,7 @@ const generating = ref(false)
 const aiPrompt = ref('')
 const aiInputRef = ref<HTMLInputElement | null>(null)
 const sidebarCollapsed = ref(false)
-const autoContext = ref(true)
+const autoContext = ref(false)
 const metaStats = ref({ dataset_count: 0, table_count: 0 })
 const isVectorSupported = ref(true)
 
@@ -238,7 +239,35 @@ const showSuggestionModal = ref(false)
 const suggestions = ref<{title: string, description: string, sql: string}[]>([])
 const loadingSuggestions = ref(false)
 const aiContextTable = ref<string | null>(null)
+const selectedSuggestionIdx = ref(0)
 const queryHistory = ref<{sql: string, params: any, timestamp: number}[]>([])
+
+const selectedSuggestion = computed(() => suggestions.value[selectedSuggestionIdx.value] ?? null)
+
+const suggestionModalSubtitle = computed(() => {
+  if (aiContextTable.value) return `基于表「${aiContextTable.value}」生成`
+  if (selectedTables.value.length > 0) return `基于已选 ${selectedTables.value.length} 张表`
+  return '基于当前数据源元数据智能推荐'
+})
+
+watch(showSuggestionModal, (open) => {
+  if (open) selectedSuggestionIdx.value = 0
+})
+
+const adoptSuggestion = (sql: string) => {
+  createTab(sql)
+  showSuggestionModal.value = false
+  showToast('已采用推荐查询', 'success')
+}
+
+const copySuggestionSql = async (sql: string) => {
+  try {
+    await navigator.clipboard.writeText(sql)
+    showToast('SQL 已复制到剪贴板', 'success')
+  } catch {
+    showToast('复制失败，请手动选择复制', 'error')
+  }
+}
 
 type AiTaskType = 'prompt' | 'profile' | 'suggest-global' | 'suggest-table' | null
 
@@ -326,10 +355,11 @@ const aiExamples = [
   "查询重复的邮箱地址及其出现次数"
 ]
 const showAiExamples = ref(false)
-const aiBarCollapsed = ref(localStorage.getItem('sqllab_ai_bar_collapsed') !== '0')
+const AI_BAR_COLLAPSED_KEY = 'sqllab_ai_bar_collapsed_v2'
+const aiBarCollapsed = ref(localStorage.getItem(AI_BAR_COLLAPSED_KEY) !== '0')
 
 watch(aiBarCollapsed, (collapsed) => {
-  localStorage.setItem('sqllab_ai_bar_collapsed', collapsed ? '1' : '0')
+  localStorage.setItem(AI_BAR_COLLAPSED_KEY, collapsed ? '1' : '0')
 })
 
 const expandAiBar = () => {
@@ -758,6 +788,7 @@ const openSuggestionModal = async () => {
   if (isAiProcessing.value) return
 
   aiTaskType.value = 'suggest-global'
+  aiContextTable.value = null
   loadingSuggestions.value = true
   currentAbortController.value = new AbortController()
   
@@ -1076,7 +1107,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div ref="sqllabContainer" class="space-y-2 flex flex-col relative" 
+  <div ref="sqllabContainer" class="space-y-1.5 flex flex-col relative" 
     :class="[
       (noLabModeAccess || noAccessToAnyDataSource) ? 'h-[calc(100vh-64px)] overflow-hidden -m-8' : 'pb-20',
       isFullscreen ? 'fixed inset-0 z-[9999] bg-gray-50 p-6 overflow-auto h-screen' : ''
@@ -1151,41 +1182,32 @@ onMounted(() => {
       </transition>
     </teleport>
 
-    <div class="flex-shrink-0 flex justify-between items-end h-10" :class="{ 'blur-sm grayscale opacity-50': noAccessToAnyDataSource || noLabModeAccess }">
-      <div class="flex items-center gap-2">
-        <h1 class="text-xl font-bold text-gray-900 flex items-center">
-          <BeakerIcon class="w-7 h-7 text-blue-600 mr-2" /> SQL 实验室
+    <div class="flex-shrink-0 flex justify-between items-center gap-3" :class="{ 'blur-sm grayscale opacity-50': noAccessToAnyDataSource || noLabModeAccess }">
+      <div class="flex items-center gap-2 min-w-0">
+        <h1 class="text-base font-bold text-gray-900 flex items-center shrink-0">
+          <BeakerIcon class="w-5 h-5 text-blue-600 mr-1.5" /> SQL 实验室
         </h1>
-        <div class="flex h-6 items-center relative min-w-[80px]">
-          <transition-group 
-            enter-active-class="transition duration-200 ease-out absolute" 
-            enter-from-class="opacity-0 scale-95 -translate-x-2" 
-            enter-to-class="opacity-100 scale-100 translate-x-0" 
-            leave-active-class="transition duration-150 ease-in absolute" 
-            leave-from-class="opacity-100 scale-100" 
-            leave-to-class="opacity-0 scale-95 translate-x-2"
-          >
-            <div v-if="labMode === 'api'" key="api" class="flex items-center gap-2 whitespace-nowrap">
-              <span class="px-3 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-black rounded-full border border-blue-100 uppercase shadow-sm">API 调试模式</span>
-              <span class="text-[10px] text-gray-400/80 font-medium italic tracking-tight">—— 适应于开发 API 接口，进行调试测试&发布</span>
-            </div>
-            <div v-else key="analyst" class="flex items-center gap-2 whitespace-nowrap">
-              <span class="px-3 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-black rounded-full border border-orange-100 uppercase shadow-sm">自助取数模式</span>
-              <span class="text-[10px] text-gray-400/80 font-medium italic tracking-tight">—— 适用于自助查询数据分析，支持 AI 自然语言查</span>
-            </div>
-          </transition-group>
-        </div>
+        <span
+          v-if="labMode === 'api'"
+          class="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-semibold rounded border border-blue-100 shrink-0"
+        >API 调试</span>
+        <span
+          v-else
+          class="px-2 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-semibold rounded border border-orange-100 shrink-0"
+        >自助取数</span>
+        <span class="text-[10px] text-gray-400 truncate hidden xl:inline">
+          {{ labMode === 'api' ? '开发调试与发布 API' : '自助查询分析 · 支持 AI 自然语言' }}
+        </span>
       </div>
-      <div class="flex items-center gap-4 bg-white p-1.5 rounded-xl shadow-sm border border-gray-200">
-        <div class="flex p-1 bg-gray-100 rounded-lg">
-          <button v-if="hasApiMode" @click="setLabMode('api')" :class="labMode === 'api' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'" class="px-5 py-1.5 text-xs font-bold rounded-md transition-all">🛠️ API 调试</button>
-          <button v-if="hasAnalystMode" @click="setLabMode('analyst')" :class="labMode === 'analyst' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'" class="px-5 py-1.5 text-xs font-bold rounded-md transition-all">📊 自助取数</button>
+      <div class="flex items-center gap-1.5 bg-white px-1 py-0.5 rounded-lg shadow-sm border border-gray-200 shrink-0">
+        <div class="flex p-0.5 bg-gray-100 rounded-md">
+          <button v-if="hasApiMode" @click="setLabMode('api')" :class="labMode === 'api' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'" class="px-2.5 py-1 text-[11px] font-semibold rounded transition-all">🛠️ API 调试</button>
+          <button v-if="hasAnalystMode" @click="setLabMode('analyst')" :class="labMode === 'analyst' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'" class="px-2.5 py-1 text-[11px] font-semibold rounded transition-all">📊 自助取数</button>
         </div>
-        <div class="w-[1px] h-6 bg-gray-200 mx-1"></div>
-        <Tooltip text="切换显示效果" position="bottom">
-          <button @click="toggleFullscreen(sqllabContainer!)" class="flex items-center gap-2 px-4 py-1.5 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-            <component :is="isFullscreen ? ArrowsPointingInIcon : ArrowsPointingOutIcon" class="w-5 h-5" />
-            <span class="text-xs font-bold">{{ isFullscreen ? '退出全屏' : '全屏模式' }}</span>
+        <div class="w-px h-5 bg-gray-200" />
+        <Tooltip :text="isFullscreen ? '退出全屏' : '全屏模式'" position="bottom">
+          <button @click="toggleFullscreen(sqllabContainer!)" class="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all">
+            <component :is="isFullscreen ? ArrowsPointingInIcon : ArrowsPointingOutIcon" class="w-4 h-4" />
           </button>
         </Tooltip>
       </div>
@@ -1506,23 +1528,105 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-if="showSuggestionModal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-      <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden animate-in zoom-in duration-300">
-        <div class="p-6 border-b bg-gray-50 flex justify-between items-center text-gray-900">
-          <div class="flex items-center gap-2"><SparklesIcon class="w-6 h-6 text-indigo-600 animate-pulse" /><h3 class="text-xl font-bold">✨ AI 智能查询推荐</h3></div>
-          <button @click="showSuggestionModal = false" class="text-gray-400 hover:text-gray-600 transition-all"><XMarkIcon class="w-7 h-7" /></button>
-        </div>
-        <div class="flex-1 overflow-y-auto p-6 bg-gray-50/50 custom-scrollbar">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div v-for="(item, idx) in suggestions" :key="idx" class="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all group flex flex-col">
-              <div class="flex items-start justify-between mb-4">
-                <div class="p-2 bg-indigo-50 rounded-xl text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all"><CommandLineIcon class="w-6 h-6" /></div>
-                <button @click="() => { createTab(item.sql); showSuggestionModal = false; }" class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-black rounded-lg hover:bg-indigo-700 shadow-md transform group-hover:scale-105 transition-all">立即采用</button>
+    <div v-if="showSuggestionModal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" @click.self="showSuggestionModal = false">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col max-h-[88vh] overflow-hidden animate-in zoom-in duration-300 border border-gray-100">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <SparklesIcon class="w-5 h-5 text-indigo-600" />
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="text-lg font-bold text-gray-900">AI 智能查询推荐</h3>
+                <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[11px] font-semibold">
+                  {{ suggestions.length }} 个场景
+                </span>
               </div>
-              <h4 class="font-bold text-gray-900 mb-2">{{ item.title }}</h4>
-              <p class="text-xs text-gray-500 mb-4 flex-1">{{ item.description }}</p>
-              <div class="bg-gray-900 rounded-xl p-4 overflow-hidden relative">
-                <pre class="text-[10px] text-green-400 font-mono overflow-x-auto custom-scrollbar whitespace-pre-wrap max-h-24"><code>{{ item.sql }}</code></pre>
+              <p class="text-xs text-gray-500 mt-0.5 truncate">{{ suggestionModalSubtitle }}</p>
+            </div>
+          </div>
+          <button type="button" @click="showSuggestionModal = false" class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors shrink-0">
+            <XMarkIcon class="w-5 h-5" />
+          </button>
+        </div>
+
+        <!-- Master-Detail Body -->
+        <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+          <!-- Left: scenario list -->
+          <div class="md:w-[280px] lg:w-[320px] shrink-0 border-b md:border-b-0 md:border-r border-gray-100 bg-gray-50/80 flex flex-col min-h-0">
+            <div class="px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100">
+              推荐场景
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+              <button
+                v-for="(item, idx) in suggestions"
+                :key="idx"
+                type="button"
+                class="w-full text-left px-3 py-2.5 rounded-lg border transition-all"
+                :class="selectedSuggestionIdx === idx
+                  ? 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-100'
+                  : 'border-transparent hover:bg-white hover:border-gray-200'"
+                @click="selectedSuggestionIdx = idx"
+              >
+                <div class="flex items-start gap-2">
+                  <span
+                    class="shrink-0 w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center mt-0.5"
+                    :class="selectedSuggestionIdx === idx ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'"
+                  >{{ idx + 1 }}</span>
+                  <span class="text-xs font-semibold leading-snug line-clamp-2" :class="selectedSuggestionIdx === idx ? 'text-indigo-900' : 'text-gray-700'">
+                    {{ item.title }}
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Right: detail panel -->
+          <div v-if="selectedSuggestion" class="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-5">
+              <div>
+                <h4 class="text-base font-bold text-gray-900 leading-snug">{{ selectedSuggestion.title }}</h4>
+                <p class="mt-2 text-sm text-gray-600 leading-relaxed">{{ selectedSuggestion.description }}</p>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">SQL 预览</span>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-indigo-600 transition-colors"
+                    @click="copySuggestionSql(selectedSuggestion.sql)"
+                  >
+                    <ClipboardDocumentIcon class="w-3.5 h-3.5" />
+                    复制 SQL
+                  </button>
+                </div>
+                <div class="rounded-xl border border-gray-800 bg-[#1e1e1e] overflow-hidden">
+                  <pre class="p-4 text-[12px] leading-relaxed text-emerald-400 font-mono overflow-x-auto custom-scrollbar whitespace-pre-wrap max-h-[min(42vh,360px)]"><code>{{ selectedSuggestion.sql }}</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer actions -->
+            <div class="shrink-0 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between gap-3">
+              <p class="text-[11px] text-gray-400 hidden sm:block">采用后将新建查询标签页并填入 SQL</p>
+              <div class="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                  @click="showSuggestionModal = false"
+                >
+                  关闭
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+                  @click="adoptSuggestion(selectedSuggestion.sql)"
+                >
+                  <PlayIcon class="w-4 h-4" />
+                  采用此查询
+                </button>
               </div>
             </div>
           </div>

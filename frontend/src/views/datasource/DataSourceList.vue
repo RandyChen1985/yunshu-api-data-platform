@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive, onUnmounted } from 'vue'
+import { ref, computed, onMounted, reactive, onUnmounted, nextTick } from 'vue'
 import draggable from 'vuedraggable'
 import axios from '@/utils/axios'
 import Toast from '@/components/Toast.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import Switch from '@/components/Switch.vue'
+import ClearableInput from '@/components/common/ClearableInput.vue'
 import {
   PencilSquareIcon,
   TrashIcon,
   PlayIcon,
   CircleStackIcon,
   Bars3Icon,
-  MagnifyingGlassIcon,
   PlusIcon,
   ArrowPathIcon,
   DocumentDuplicateIcon,
+  ShieldCheckIcon,
 } from '@heroicons/vue/24/outline'
 import type { DataSource } from '@/types/datasource'
 import {
@@ -124,7 +125,34 @@ const confirmDialog = ref({
 })
 
 const openMore = ref<number | null>(null)
-const toggleMore = (id: number, e: MouseEvent) => { e.stopPropagation(); openMore.value = openMore.value === id ? null : id }
+const moreMenuPos = ref<{ top: number; left: number; minWidth: number; openUp: boolean } | null>(null)
+const MORE_MENU_WIDTH = 144
+const MORE_MENU_EST_HEIGHT = 240
+
+const openMoreItem = computed(() => {
+  if (openMore.value === null) return null
+  return datasources.value.find((ds) => ds.id === openMore.value) ?? null
+})
+
+const toggleMore = (id: number, e: MouseEvent) => {
+  e.stopPropagation()
+  if (openMore.value === id) {
+    openMore.value = null
+    moreMenuPos.value = null
+    return
+  }
+  const btn = e.currentTarget as HTMLElement
+  const rect = btn.getBoundingClientRect()
+  const spaceBelow = window.innerHeight - rect.bottom
+  const openUp = spaceBelow < MORE_MENU_EST_HEIGHT && rect.top > MORE_MENU_EST_HEIGHT
+  moreMenuPos.value = {
+    top: openUp ? rect.top - 4 : rect.bottom + 4,
+    left: rect.right,
+    minWidth: Math.max(rect.width, MORE_MENU_WIDTH),
+    openUp,
+  }
+  openMore.value = id
+}
 
 const toast = ref({ show: false, message: '', type: 'info' as 'success' | 'error' | 'warning' | 'info', key: 0 })
 const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
@@ -708,11 +736,76 @@ const cancelProfiling = async (item: DataSource) => {
   }
 }
 
+type TableScope = {
+  all_tables: boolean
+  tables: string[]
+  configured: boolean
+}
+
+type DatasourcePermissionRole = {
+  id: number
+  role_code: string
+  role_name: string
+  member_count: number
+  table_scope: TableScope
+}
+
+type DatasourcePermissionUser = {
+  id: number
+  user_name: string
+  status: number
+  table_scope: TableScope
+}
+
+type DatasourcePermissionsData = {
+  source_id: number
+  source_name: string
+  roles: DatasourcePermissionRole[]
+  users: DatasourcePermissionUser[]
+  admin_count: number
+}
+
+const showPermissionsTarget = ref<DataSource | null>(null)
+const permissionsData = ref<DatasourcePermissionsData | null>(null)
+const loadingPermissions = ref(false)
+const permissionsTab = ref<'roles' | 'users'>('roles')
+
+const formatTableScope = (scope?: TableScope) => {
+  if (!scope?.configured) return '未配置表权限'
+  if (scope.all_tables) return '所有表'
+  if (scope.tables.length === 0) return '未配置表权限'
+  if (scope.tables.length <= 3) return scope.tables.join('、')
+  return `${scope.tables.slice(0, 3).join('、')} 等 ${scope.tables.length} 张表`
+}
+
+const openPermissionsView = async (item: DataSource) => {
+  showPermissionsTarget.value = item
+  permissionsData.value = null
+  loadingPermissions.value = true
+  permissionsTab.value = 'roles'
+  try {
+    const res = await axios.get(`/api/portal/datasource/datasources/${item.id}/permissions`)
+    permissionsData.value = res.data
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || '获取授权信息失败', 'error')
+    showPermissionsTarget.value = null
+  } finally {
+    loadingPermissions.value = false
+  }
+}
+
+const closePermissionsView = () => {
+  showPermissionsTarget.value = null
+  permissionsData.value = null
+}
+
 // 查看摸排分析结果 Modal 状态
 const showProfilesTarget = ref<DataSource | null>(null)
 const viewTableProfiles = ref<any[]>([])
 const loadingViewProfiles = ref(false)
+const isRenderingProfiles = ref(false)
 const profilesSearchQuery = ref('')
+const profilesSortBy = ref<'name' | 'confidence_desc' | 'confidence_asc'>('confidence_desc')
 const selectedProfileTag = ref<string | null>(null)
 const isTagsExpanded = ref(false)
 const expandedTables = ref<Record<string, boolean>>({})
@@ -721,9 +814,11 @@ const loadingProfileDetails = ref<Record<string, boolean>>({})
 const openTableProfiles = async (item: DataSource) => {
   showProfilesTarget.value = item
   loadingViewProfiles.value = true
+  isRenderingProfiles.value = false
   viewTableProfiles.value = []
   profileModalTask.value = null
   profilesSearchQuery.value = ''
+  profilesSortBy.value = 'confidence_desc'
   selectedProfileTag.value = null
   isTagsExpanded.value = false
   expandedTables.value = {}
@@ -749,6 +844,20 @@ const openTableProfiles = async (item: DataSource) => {
     showToast('获取摸排结果失败', 'error')
   } finally {
     loadingViewProfiles.value = false
+    const profileCount = viewTableProfiles.value.length
+    if (profileCount > 0) {
+      isRenderingProfiles.value = true
+      await nextTick()
+      const renderDelay = profileCount > 500 ? 400 : profileCount > 100 ? 200 : 80
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            window.setTimeout(resolve, renderDelay)
+          })
+        })
+      })
+      isRenderingProfiles.value = false
+    }
   }
 }
 
@@ -777,6 +886,7 @@ const closeTableProfiles = () => {
   showProfilesTarget.value = null
   viewTableProfiles.value = []
   profileModalTask.value = null
+  isRenderingProfiles.value = false
 }
 
 const toggleTableExpand = (tableName: string) => {
@@ -816,20 +926,33 @@ const availableTags = computed(() => {
 })
 
 const filteredViewProfiles = computed(() => {
-  let list = viewTableProfiles.value
+  let list = [...viewTableProfiles.value]
 
   if (selectedProfileTag.value) {
     list = list.filter((p: any) => p.ai_tags && p.ai_tags.includes(selectedProfileTag.value))
   }
 
-  if (!profilesSearchQuery.value.trim()) return list
   const q = profilesSearchQuery.value.trim().toLowerCase()
-  return list.filter((p: any) =>
-    p.table_name.toLowerCase().includes(q) ||
-    (p.ai_term && p.ai_term.toLowerCase().includes(q)) ||
-    (p.ai_description && p.ai_description.toLowerCase().includes(q)) ||
-    (p.ai_tags && p.ai_tags.some((tag: string) => tag.toLowerCase().includes(q)))
-  )
+  if (q) {
+    list = list.filter((p: any) =>
+      p.table_name.toLowerCase().includes(q) ||
+      (p.ai_term && p.ai_term.toLowerCase().includes(q)) ||
+      (p.ai_description && p.ai_description.toLowerCase().includes(q)) ||
+      (p.ai_tags && p.ai_tags.some((tag: string) => tag.toLowerCase().includes(q)))
+    )
+  }
+
+  list.sort((a: any, b: any) => {
+    if (profilesSortBy.value === 'confidence_desc') {
+      return (b.confidence_score ?? 0) - (a.confidence_score ?? 0) || a.table_name.localeCompare(b.table_name)
+    }
+    if (profilesSortBy.value === 'confidence_asc') {
+      return (a.confidence_score ?? 0) - (b.confidence_score ?? 0) || a.table_name.localeCompare(b.table_name)
+    }
+    return a.table_name.localeCompare(b.table_name)
+  })
+
+  return list
 })
 
 const togglingIgnore = ref<Record<string, boolean>>({})
@@ -852,17 +975,24 @@ const toggleProfileIgnore = async (profile: any) => {
   }
 }
 
-const closeMore = () => { openMore.value = null }
+const closeMore = () => {
+  openMore.value = null
+  moreMenuPos.value = null
+}
 
 onMounted(() => {
   checkRole()
   fetchDatasources()
   document.addEventListener('click', closeMore)
+  window.addEventListener('scroll', closeMore, true)
+  window.addEventListener('resize', closeMore)
 })
 
 onUnmounted(() => {
   Object.values(pollingIntervals).forEach((interval) => clearInterval(interval))
   document.removeEventListener('click', closeMore)
+  window.removeEventListener('scroll', closeMore, true)
+  window.removeEventListener('resize', closeMore)
 })
 </script>
 
@@ -914,15 +1044,13 @@ onUnmounted(() => {
 
     <!-- Toolbar -->
     <div v-if="!loading && datasources.length > 0" class="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap gap-3 items-center">
-      <div class="relative flex-1 min-w-[200px]">
-        <MagnifyingGlassIcon class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="搜索名称、主机、库名、描述..."
-          class="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-      </div>
+      <ClearableInput
+        v-model="searchQuery"
+        show-search-icon
+        wrapper-class="flex-1 min-w-[200px]"
+        input-class="py-2 text-sm"
+        placeholder="搜索名称、主机、库名、描述..."
+      />
       <select
         v-model="typeFilter"
         class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -1100,74 +1228,6 @@ onUnmounted(() => {
                           更多
                           <svg class="w-3 h-3 transition-transform duration-150" :class="openMore === item.id ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                         </button>
-                        <div
-                          v-if="openMore === item.id"
-                          class="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-lg shadow-xl z-50 py-1 overflow-hidden"
-                        >
-                          <!-- 摸排进行中：停止 -->
-                          <button
-                            v-if="profilingTasks[item.id]?.status === 1"
-                            type="button"
-                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-50 transition-colors"
-                            @click="requestCancelProfiling(item); openMore = null"
-                          >
-                            <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
-                            停止摸排
-                          </button>
-                          <!-- 摸排 -->
-                          <button
-                            type="button"
-                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
-                            :class="profilingTasks[item.id]?.status === 1 || item.status !== 1 ? 'text-gray-300 cursor-not-allowed' : 'text-indigo-600 hover:bg-indigo-50'"
-                            :disabled="profilingTasks[item.id]?.status === 1 || item.status !== 1"
-                            @click="requestProfiling(item); openMore = null"
-                          >
-                            <CircleStackIcon class="w-3.5 h-3.5 shrink-0" :class="profilingTasks[item.id]?.status === 1 ? 'animate-spin' : ''" />
-                            {{ profilingTasks[item.id]?.status === 1 ? '摸排中...' : '启动摸排' }}
-                          </button>
-                          <!-- 全量重跑（已有摸排记录且非进行中时显示） -->
-                          <button
-                            v-if="hasProfilingHistory(item)"
-                            type="button"
-                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                            @click="requestForceProfiling(item); openMore = null"
-                          >
-                            <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
-                            全量重跑
-                          </button>
-                          <!-- 画像（已有成功画像即可查看，摸排进行中也可） -->
-                          <button
-                            v-if="hasViewableProfiles(item)"
-                            type="button"
-                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-purple-600 hover:bg-purple-50 transition-colors"
-                            @click="openTableProfiles(item); openMore = null"
-                          >
-                            <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
-                            查看画像
-                            <span
-                              v-if="profilingTasks[item.id]?.status === 1"
-                              class="ml-auto text-[9px] text-purple-400 font-mono"
-                            >{{ profilingTasks[item.id]?.completed_profiles }}</span>
-                          </button>
-                          <div class="h-px bg-gray-100 mx-2 my-1" />
-                          <button
-                            type="button"
-                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-                            @click="openCopyDialog(item); openMore = null"
-                          >
-                            <DocumentDuplicateIcon class="w-3.5 h-3.5 shrink-0" />
-                            复制新建
-                          </button>
-                          <div class="h-px bg-gray-100 mx-2 my-1" />
-                          <button
-                            type="button"
-                            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                            @click="confirmDelete(item); openMore = null"
-                          >
-                            <TrashIcon class="w-3.5 h-3.5 shrink-0" />
-                            删除
-                          </button>
-                        </div>
                       </div>
                       <span v-if="!canEdit" class="text-xs text-gray-400">只读</span>
                     </div>
@@ -1257,74 +1317,6 @@ onUnmounted(() => {
                         更多
                         <svg class="w-3 h-3 transition-transform duration-150" :class="openMore === item.id ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                       </button>
-                      <div
-                        v-if="openMore === item.id"
-                        class="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-lg shadow-xl z-50 py-1 overflow-hidden"
-                      >
-                        <!-- 摸排进行中：停止 -->
-                        <button
-                          v-if="profilingTasks[item.id]?.status === 1"
-                          type="button"
-                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-50 transition-colors"
-                          @click="requestCancelProfiling(item); openMore = null"
-                        >
-                          <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
-                          停止摸排
-                        </button>
-                        <!-- 摸排 -->
-                        <button
-                          type="button"
-                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
-                          :class="profilingTasks[item.id]?.status === 1 || item.status !== 1 ? 'text-gray-300 cursor-not-allowed' : 'text-indigo-600 hover:bg-indigo-50'"
-                          :disabled="profilingTasks[item.id]?.status === 1 || item.status !== 1"
-                          @click="requestProfiling(item); openMore = null"
-                        >
-                          <CircleStackIcon class="w-3.5 h-3.5 shrink-0" :class="profilingTasks[item.id]?.status === 1 ? 'animate-spin' : ''" />
-                          {{ profilingTasks[item.id]?.status === 1 ? '摸排中...' : '启动摸排' }}
-                        </button>
-                        <!-- 全量重跑（已有摸排记录且非进行中时显示） -->
-                        <button
-                          v-if="hasProfilingHistory(item)"
-                          type="button"
-                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                          @click="requestForceProfiling(item); openMore = null"
-                        >
-                          <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
-                          全量重跑
-                        </button>
-                        <!-- 画像（已有成功画像即可查看，摸排进行中也可） -->
-                        <button
-                          v-if="hasViewableProfiles(item)"
-                          type="button"
-                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-purple-600 hover:bg-purple-50 transition-colors"
-                          @click="openTableProfiles(item); openMore = null"
-                        >
-                          <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
-                          查看画像
-                          <span
-                            v-if="profilingTasks[item.id]?.status === 1"
-                            class="ml-auto text-[9px] text-purple-400 font-mono"
-                          >{{ profilingTasks[item.id]?.completed_profiles }}</span>
-                        </button>
-                        <div class="h-px bg-gray-100 mx-2 my-1" />
-                        <button
-                          type="button"
-                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-                          @click="openCopyDialog(item); openMore = null"
-                        >
-                          <DocumentDuplicateIcon class="w-3.5 h-3.5 shrink-0" />
-                          复制新建
-                        </button>
-                        <div class="h-px bg-gray-100 mx-2 my-1" />
-                        <button
-                          type="button"
-                          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                          @click="confirmDelete(item); openMore = null"
-                        >
-                          <TrashIcon class="w-3.5 h-3.5 shrink-0" />
-                          删除
-                        </button>
-                      </div>
                     </div>
                     <span v-if="!canEdit" class="text-xs text-gray-400">只读</span>
                   </div>
@@ -1348,6 +1340,89 @@ onUnmounted(() => {
         </table>
       </div>
     </div>
+
+    <!-- 更多操作菜单（Teleport 避免表格 overflow 裁切） -->
+    <Teleport to="body">
+      <div
+        v-if="openMoreItem && moreMenuPos"
+        class="fixed z-[9998] w-36 bg-white border border-gray-100 rounded-lg shadow-xl py-1 overflow-hidden"
+        :style="{
+          top: `${moreMenuPos.top}px`,
+          left: `${moreMenuPos.left}px`,
+          minWidth: `${moreMenuPos.minWidth}px`,
+          transform: moreMenuPos.openUp ? 'translate(-100%, -100%)' : 'translateX(-100%)',
+        }"
+        @click.stop
+      >
+        <button
+          v-if="profilingTasks[openMoreItem.id]?.status === 1"
+          type="button"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-50 transition-colors"
+          @click="requestCancelProfiling(openMoreItem); closeMore()"
+        >
+          <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
+          停止摸排
+        </button>
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+          :class="profilingTasks[openMoreItem.id]?.status === 1 || openMoreItem.status !== 1 ? 'text-gray-300 cursor-not-allowed' : 'text-indigo-600 hover:bg-indigo-50'"
+          :disabled="profilingTasks[openMoreItem.id]?.status === 1 || openMoreItem.status !== 1"
+          @click="requestProfiling(openMoreItem); closeMore()"
+        >
+          <CircleStackIcon class="w-3.5 h-3.5 shrink-0" :class="profilingTasks[openMoreItem.id]?.status === 1 ? 'animate-spin' : ''" />
+          {{ profilingTasks[openMoreItem.id]?.status === 1 ? '摸排中...' : '启动摸排' }}
+        </button>
+        <button
+          v-if="hasProfilingHistory(openMoreItem)"
+          type="button"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+          @click="requestForceProfiling(openMoreItem); closeMore()"
+        >
+          <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
+          全量重跑
+        </button>
+        <button
+          v-if="hasViewableProfiles(openMoreItem)"
+          type="button"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-purple-600 hover:bg-purple-50 transition-colors"
+          @click="openTableProfiles(openMoreItem); closeMore()"
+        >
+          <CircleStackIcon class="w-3.5 h-3.5 shrink-0" />
+          查看画像
+          <span
+            v-if="profilingTasks[openMoreItem.id]?.status === 1"
+            class="ml-auto text-[9px] text-purple-400 font-mono"
+          >{{ profilingTasks[openMoreItem.id]?.completed_profiles }}</span>
+        </button>
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 transition-colors"
+          @click="openPermissionsView(openMoreItem); closeMore()"
+        >
+          <ShieldCheckIcon class="w-3.5 h-3.5 shrink-0" />
+          查看授权
+        </button>
+        <div class="h-px bg-gray-100 mx-2 my-1" />
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+          @click="openCopyDialog(openMoreItem); closeMore()"
+        >
+          <DocumentDuplicateIcon class="w-3.5 h-3.5 shrink-0" />
+          复制新建
+        </button>
+        <div class="h-px bg-gray-100 mx-2 my-1" />
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+          @click="confirmDelete(openMoreItem); closeMore()"
+        >
+          <TrashIcon class="w-3.5 h-3.5 shrink-0" />
+          删除
+        </button>
+      </div>
+    </Teleport>
 
     <!-- Create / Edit Dialog -->
     <Teleport to="body">
@@ -1575,6 +1650,139 @@ onUnmounted(() => {
     <!-- Test Result Dialog -->
     <Teleport to="body">
       <div
+        v-if="showPermissionsTarget"
+        class="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-black/50"
+        @click.self="closePermissionsView"
+      >
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-lg font-bold text-gray-900">查看授权</h3>
+              <p class="text-xs text-gray-500 mt-0.5 font-mono">{{ showPermissionsTarget.source_name }}</p>
+            </div>
+            <button type="button" class="text-gray-400 hover:text-gray-600 p-1" @click="closePermissionsView">✕</button>
+          </div>
+
+          <div v-if="loadingPermissions" class="flex-1 flex flex-col items-center justify-center py-16">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            <p class="mt-3 text-sm text-gray-500">正在加载授权信息...</p>
+          </div>
+
+          <template v-else-if="permissionsData">
+            <div class="px-6 pt-4">
+              <div class="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-100 text-xs text-amber-800">
+                <ShieldCheckIcon class="w-4 h-4 shrink-0" />
+                <span>
+                  平台管理员（{{ permissionsData.admin_count }} 人）默认拥有全部数据源访问权限。
+                  此处仅展示在角色/用户管理中<strong>直接配置</strong>的授权。
+                </span>
+              </div>
+
+              <div class="mt-4 flex gap-1 p-1 bg-gray-100 rounded-lg w-fit">
+                <button
+                  type="button"
+                  class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+                  :class="permissionsTab === 'roles' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+                  @click="permissionsTab = 'roles'"
+                >
+                  角色授权
+                  <span class="ml-1 text-gray-400">({{ permissionsData.roles.length }})</span>
+                </button>
+                <button
+                  type="button"
+                  class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+                  :class="permissionsTab === 'users' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+                  @click="permissionsTab = 'users'"
+                >
+                  用户直授
+                  <span class="ml-1 text-gray-400">({{ permissionsData.users.length }})</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-6 py-4">
+              <div v-if="permissionsTab === 'roles'">
+                <div v-if="permissionsData.roles.length === 0" class="py-10 text-center text-sm text-gray-400">
+                  暂无角色被直接授权访问此数据源
+                </div>
+                <table v-else class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs text-gray-500 border-b border-gray-100">
+                      <th class="pb-2 font-medium">角色</th>
+                      <th class="pb-2 font-medium">成员数</th>
+                      <th class="pb-2 font-medium">表级范围</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-50">
+                    <tr v-for="role in permissionsData.roles" :key="role.id" class="text-gray-700">
+                      <td class="py-2.5 pr-3">
+                        <div class="font-medium text-gray-900">{{ role.role_name }}</div>
+                        <div class="text-[11px] text-gray-400 font-mono">{{ role.role_code }}</div>
+                      </td>
+                      <td class="py-2.5 pr-3 whitespace-nowrap">{{ role.member_count }}</td>
+                      <td class="py-2.5">
+                        <span
+                          class="inline-flex px-2 py-0.5 rounded text-xs"
+                          :class="role.table_scope.configured ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
+                        >
+                          {{ formatTableScope(role.table_scope) }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div v-else>
+                <div v-if="permissionsData.users.length === 0" class="py-10 text-center text-sm text-gray-400">
+                  暂无用户被直接授权访问此数据源
+                </div>
+                <table v-else class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs text-gray-500 border-b border-gray-100">
+                      <th class="pb-2 font-medium">用户</th>
+                      <th class="pb-2 font-medium">状态</th>
+                      <th class="pb-2 font-medium">表级范围</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-50">
+                    <tr v-for="user in permissionsData.users" :key="user.id" class="text-gray-700">
+                      <td class="py-2.5 pr-3 font-medium text-gray-900">{{ user.user_name }}</td>
+                      <td class="py-2.5 pr-3">
+                        <span
+                          class="inline-flex px-2 py-0.5 rounded text-xs"
+                          :class="user.status === 1 ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
+                        >
+                          {{ user.status === 1 ? '启用' : '禁用' }}
+                        </span>
+                      </td>
+                      <td class="py-2.5">
+                        <span
+                          class="inline-flex px-2 py-0.5 rounded text-xs"
+                          :class="user.table_scope.configured ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
+                        >
+                          {{ formatTableScope(user.table_scope) }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <div class="px-6 py-4 border-t border-gray-100 flex justify-end">
+            <button type="button" class="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg" @click="closePermissionsView">
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Test Result Dialog -->
+    <Teleport to="body">
+      <div
         v-if="showTestDialog"
         class="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-black/50"
         @click.self="closeTestDialog"
@@ -1631,7 +1839,27 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <div class="p-6 space-y-4 max-h-[65vh] overflow-y-auto custom-scrollbar">
+            <div class="p-6 space-y-4 max-h-[65vh] overflow-y-auto custom-scrollbar relative min-h-[280px]">
+              <div
+                v-if="loadingViewProfiles || isRenderingProfiles"
+                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-white/90 backdrop-blur-[1px]"
+              >
+                <div class="relative">
+                  <div class="w-12 h-12 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin" />
+                  <span class="absolute inset-0 flex items-center justify-center text-lg select-none">🤖</span>
+                </div>
+                <div class="text-center space-y-1 px-6">
+                  <p class="text-sm font-bold text-gray-800">
+                    {{ loadingViewProfiles ? '正在加载摸排画像...' : '正在渲染资产列表...' }}
+                  </p>
+                  <p class="text-xs text-gray-500">
+                    <template v-if="loadingViewProfiles">数据量较大时可能需要几秒钟，请稍候</template>
+                    <template v-else>共 {{ viewTableProfiles.length }} 张表，正在生成列表</template>
+                  </p>
+                </div>
+              </div>
+
+              <template v-if="!loadingViewProfiles && !isRenderingProfiles">
               <!-- 资产分析概览面板 -->
               <div v-if="!loadingViewProfiles && viewTableProfiles.length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-gray-50/50 p-4 rounded-xl border border-gray-100 shrink-0">
                 <div class="bg-white p-3 rounded-lg border border-gray-200/60 shadow-sm flex items-center gap-3">
@@ -1673,16 +1901,23 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- 搜索框 -->
-              <div class="relative w-full">
-                <input
+              <!-- 搜索与排序 -->
+              <div class="flex flex-col sm:flex-row gap-2">
+                <ClearableInput
                   v-model="profilesSearchQuery"
-                  class="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:bg-white"
+                  show-search-icon
+                  wrapper-class="w-full sm:flex-1 bg-gray-50"
+                  input-class="py-2 text-sm"
                   placeholder="过滤表名、备注或标签分类..."
+                />
+                <select
+                  v-model="profilesSortBy"
+                  class="shrink-0 text-xs border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 >
-                <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                </svg>
+                  <option value="confidence_desc">置信度从高到低</option>
+                  <option value="confidence_asc">置信度从低到高</option>
+                  <option value="name">表名 A→Z</option>
+                </select>
               </div>
 
               <!-- 快速标签过滤 -->
@@ -1713,10 +1948,7 @@ onUnmounted(() => {
                 </button>
               </div>
 
-              <div v-if="loadingViewProfiles" class="py-12 text-center text-sm text-gray-400">
-                正在读取摸排资产结果...
-              </div>
-              <div v-else-if="filteredViewProfiles.length === 0" class="py-12 text-center text-gray-400 text-sm italic bg-gray-50 rounded-lg">
+              <div v-if="filteredViewProfiles.length === 0" class="py-12 text-center text-gray-400 text-sm italic bg-gray-50 rounded-lg">
                 暂无匹配的摸排表记录。
               </div>
               <div v-else class="space-y-3">
@@ -1838,6 +2070,7 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
+              </template>
             </div>
 
             <div class="bg-gray-50 px-6 py-4 border-t border-gray-100 flex justify-end">
