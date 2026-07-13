@@ -233,3 +233,49 @@ async def test_factory_returns_sqlserver_adapter():
         adapter = await get_adapter("mssql_prod")
     assert isinstance(adapter, SqlServerAdapter)
     assert adapter.source_id == 99
+
+
+def test_prepare_pyodbc_params_converts_named_markers():
+    sql = """
+        SELECT m.definition
+        FROM sys.sql_modules m
+        WHERE o.name = :name AND o.type = 'V'
+    """
+    bound_sql, bound_args = SqlServerAdapter._prepare_pyodbc_params(sql, {"name": "v_bj_stock"})
+    assert ":name" not in bound_sql
+    assert "?" in bound_sql
+    assert bound_args == ("v_bj_stock",)
+
+
+def test_prepare_pyodbc_params_repeated_marker():
+    sql = "WHERE a = :name OR b = :name"
+    bound_sql, bound_args = SqlServerAdapter._prepare_pyodbc_params(sql, {"name": "t1"})
+    assert bound_sql.count("?") == 2
+    assert bound_args == ("t1", "t1")
+
+
+@pytest.mark.asyncio
+async def test_sqlserver_execute_sql_named_params():
+    adapter = SqlServerAdapter(source_id=1)
+    mock_cursor = AsyncMock()
+    mock_cursor.fetchall.return_value = [
+        ("id", "int", None, None, None, "NO", None),
+    ]
+    mock_cursor.description = [("COLUMN_NAME",)]
+
+    with patch(
+        "app.services.pool_manager.DataSourcePoolManager.get_pool", new_callable=AsyncMock
+    ) as mock_get_pool:
+        mock_get_pool.return_value = _mock_pool_with_cursor(mock_cursor)
+
+        sql = """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = :name AND TABLE_CATALOG = DB_NAME()
+        """
+        await adapter.execute_sql(sql, {"name": "t_wxmp_users"})
+
+    bound_sql, bound_args = mock_cursor.execute.call_args[0]
+    assert ":name" not in bound_sql
+    assert "TABLE_NAME = ?" in bound_sql
+    assert bound_args == ("t_wxmp_users",)

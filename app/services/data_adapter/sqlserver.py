@@ -15,6 +15,9 @@ from .models import LogicalQuery, ResultSet
 
 logger = logging.getLogger(__name__)
 
+# pyodbc 仅支持 ``?`` 占位符；将 ``:name`` 转为位置参数
+_NAMED_PARAM_PATTERN = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
+
 
 class SqlServerAdapter(DataSourceAdapter):
     """SQL Server Adapter — 参数占位符 ``?``，标识符 ``[name]``。"""
@@ -24,6 +27,20 @@ class SqlServerAdapter(DataSourceAdapter):
 
     def _quote(self, name: str) -> str:
         return f"[{name.replace(']', ']]')}]"
+
+    @staticmethod
+    def _prepare_pyodbc_params(
+        sql: str, params: Optional[Dict[str, Any]]
+    ) -> Tuple[str, Optional[tuple]]:
+        """将 Oracle/MySQL 风格的 ``:name`` 转为 pyodbc 的 ``?`` + 元组参数。"""
+        if not params:
+            return sql, None
+        matches = list(_NAMED_PARAM_PATTERN.finditer(sql))
+        if not matches:
+            return sql, None
+        bound_sql = _NAMED_PARAM_PATTERN.sub("?", sql)
+        bound_args = tuple(params[m.group(1)] for m in matches)
+        return bound_sql, bound_args
 
     def _clean_value(self, field: str, value: Any) -> Any:
         return value
@@ -252,10 +269,15 @@ class SqlServerAdapter(DataSourceAdapter):
         if params is not None and not params:
             params = None
 
+        bound_sql, bound_args = self._prepare_pyodbc_params(sql, params)
+
         pool = await DataSourcePoolManager.get_pool(self.source_id)
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(sql, params)
+                if bound_args is None:
+                    await cursor.execute(bound_sql)
+                else:
+                    await cursor.execute(bound_sql, bound_args)
                 rows = await cursor.fetchall()
                 columns = []
                 if cursor.description:
