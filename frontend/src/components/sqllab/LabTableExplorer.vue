@@ -36,12 +36,20 @@ const props = withDefaults(defineProps<{
   includeIgnored?: boolean
   allowIgnoreToggle?: boolean
   defaultScope?: 'all' | 'profiled'
+  initialScope?: 'all' | 'profiled' | 'favorites' | 'recent'
+  excludedTables?: string[]
+  overlayZClass?: string
+  confirmLabel?: string
+  selectionHint?: string
 }>(), {
   modelValue: () => [],
   mode: 'select',
   includeIgnored: false,
   allowIgnoreToggle: false,
   defaultScope: 'profiled',
+  excludedTables: () => [],
+  confirmLabel: '确认并关闭',
+  selectionHint: '同步到侧栏勾选',
 })
 
 const emit = defineEmits<{
@@ -52,6 +60,11 @@ const emit = defineEmits<{
 const { showToast } = useToast()
 
 const isBrowse = computed(() => props.mode === 'browse')
+const overlayZClass = computed(() =>
+  props.overlayZClass || (isBrowse.value ? 'z-[9990]' : 'z-[120]'),
+)
+const excludedSet = computed(() => new Set(props.excludedTables || []))
+const isExcluded = (name: string) => excludedSet.value.has(name)
 const searchQ = ref('')
 const scope = ref<'all' | 'profiled' | 'favorites' | 'recent'>('all')
 const selectedTag = ref<string | null>(null)
@@ -271,6 +284,10 @@ const selectTag = (tag: string | null) => {
 const isInDraft = (name: string) => draftSelected.value.includes(name)
 
 const toggleDraft = (name: string) => {
+  if (isExcluded(name)) {
+    showToast('该表已导入，无法重复选择', 'info')
+    return
+  }
   if (isInDraft(name)) {
     draftSelected.value = draftSelected.value.filter(t => t !== name)
   } else {
@@ -322,7 +339,7 @@ const onRowClick = (item: ExplorerTableItem) => {
 }
 
 const addRelatedToDraft = (tableName: string) => {
-  if (isBrowse.value || isInDraft(tableName)) return
+  if (isBrowse.value || isInDraft(tableName) || isExcluded(tableName)) return
   draftSelected.value = [...draftSelected.value, tableName]
   showToast(`已加入已选：${tableName}`, 'success')
 }
@@ -331,7 +348,7 @@ const addAllRelatedToDraft = () => {
   if (isBrowse.value) return
   const toAdd = relatedTables.value
     .map(r => r.table_name)
-    .filter(t => !isInDraft(t))
+    .filter(t => !isInDraft(t) && !isExcluded(t))
   if (!toAdd.length) {
     showToast('关联表均已在已选列表中', 'info')
     return
@@ -414,7 +431,7 @@ const onKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   draftSelected.value = [...(props.modelValue || [])]
-  scope.value = isBrowse.value ? props.defaultScope : 'all'
+  scope.value = props.initialScope ?? (isBrowse.value ? props.defaultScope : 'all')
   fetchTags()
   fetchResults()
   document.addEventListener('keydown', onKeydown)
@@ -437,7 +454,7 @@ watch(page, fetchResults)
 <template>
   <div
     class="fixed inset-0 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm"
-    :class="isBrowse ? 'z-[9990]' : 'z-[120]'"
+    :class="overlayZClass"
     @click.self="emit('close')"
   >
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[82vh] flex flex-col overflow-hidden">
@@ -565,8 +582,13 @@ watch(page, fetchResults)
                   v-if="!isBrowse"
                   type="button"
                   class="mt-0.5 shrink-0 w-6 h-6 rounded-md border flex items-center justify-center transition-colors"
-                  :class="isInDraft(item.table_name) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-200 text-gray-400 hover:border-indigo-400 hover:text-indigo-600'"
-                  :title="isInDraft(item.table_name) ? '移出已选' : '加入已选'"
+                  :class="isExcluded(item.table_name)
+                    ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                    : isInDraft(item.table_name)
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'border-gray-200 text-gray-400 hover:border-indigo-400 hover:text-indigo-600'"
+                  :title="isExcluded(item.table_name) ? '已导入' : (isInDraft(item.table_name) ? '移出已选' : '加入已选')"
+                  :disabled="isExcluded(item.table_name)"
                   @click.stop="toggleDraft(item.table_name)"
                 >
                   <CheckIcon v-if="isInDraft(item.table_name)" class="w-3.5 h-3.5" />
@@ -594,6 +616,7 @@ watch(page, fetchResults)
                       <span v-if="item.confidence_score != null" class="text-[9px] px-1 py-0.5 rounded font-bold bg-green-100 text-green-700 shrink-0">{{ item.confidence_score }}%</span>
                       <span v-if="item.status === 3" class="text-[9px] px-1 py-0.5 rounded font-bold bg-red-100 text-red-600 shrink-0">分析失败</span>
                       <span v-if="item.is_temporary" class="text-[9px] px-1 py-0.5 rounded font-bold bg-amber-100 text-amber-800 shrink-0">临时表</span>
+                      <span v-if="isExcluded(item.table_name)" class="text-[9px] px-1 py-0.5 rounded font-bold bg-gray-200 text-gray-500 shrink-0">已导入</span>
                       <StarSolidIcon v-if="item.is_favorite" class="w-3.5 h-3.5 text-amber-500 shrink-0" />
                     </div>
                     <button
@@ -721,12 +744,14 @@ watch(page, fetchResults)
                         v-if="!isBrowse"
                         type="button"
                         class="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors"
-                        :class="isInDraft(rel.table_name)
-                          ? 'text-gray-400 border-gray-200 cursor-default'
-                          : 'text-indigo-600 border-indigo-200 hover:bg-indigo-100'"
-                        :disabled="isInDraft(rel.table_name)"
+                        :class="isExcluded(rel.table_name)
+                          ? 'text-gray-300 border-gray-100 cursor-not-allowed'
+                          : isInDraft(rel.table_name)
+                            ? 'text-gray-400 border-gray-200 cursor-default'
+                            : 'text-indigo-600 border-indigo-200 hover:bg-indigo-100'"
+                        :disabled="isInDraft(rel.table_name) || isExcluded(rel.table_name)"
                         @click.stop="addRelatedToDraft(rel.table_name)"
-                      >{{ isInDraft(rel.table_name) ? '已选' : '加入' }}</button>
+                      >{{ isExcluded(rel.table_name) ? '已导入' : (isInDraft(rel.table_name) ? '已选' : '加入') }}</button>
                     </div>
                   </div>
                   <div v-if="rel.join_hint" class="mt-1 text-[8px] font-mono text-gray-400 truncate" :title="rel.join_hint">{{ rel.join_hint }}</div>
@@ -778,7 +803,7 @@ watch(page, fetchResults)
       <div v-else class="px-5 py-3 border-t bg-white shrink-0 flex items-center gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between gap-2 mb-1">
-            <span class="text-[10px] text-gray-400">已选 {{ draftSelected.length }} 张表（同步到侧栏勾选）</span>
+            <span class="text-[10px] text-gray-400">已选 {{ draftSelected.length }} 张表（{{ selectionHint }}）</span>
             <button
               v-if="draftSelected.length"
               type="button"
@@ -801,7 +826,7 @@ watch(page, fetchResults)
           type="button"
           class="px-5 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm"
           @click="confirmSelection"
-        >确认并关闭</button>
+        >{{ confirmLabel }}</button>
       </div>
     </div>
   </div>

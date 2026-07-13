@@ -4,9 +4,10 @@ import axios from '../../utils/axios'
 import { 
   CircleStackIcon, TableCellsIcon, XMarkIcon, 
   ChevronRightIcon, ArrowPathIcon, CheckIcon,
-  MagnifyingGlassIcon
+  MagnifyingGlassIcon, SparklesIcon
 } from '@heroicons/vue/24/outline'
 import ClearableInput from '../common/ClearableInput.vue'
+import LabTableExplorer from '../sqllab/LabTableExplorer.vue'
 
 const props = defineProps<{ 
   show: boolean, 
@@ -32,9 +33,7 @@ const tableSearchQuery = ref('')
 const activeTab = ref<'system' | 'profile'>('system')
 const tableProfiles = ref<any[]>([])
 const loadingProfiles = ref(false)
-const selectedProfileTag = ref<string | null>(null)
-const tagsExpanded = ref(false)
-const TAGS_COLLAPSED_LIMIT = 6
+const showProfileExplorer = ref(false)
 
 const filteredTables = computed(() => {
   if (!tableSearchQuery.value) return tables.value
@@ -93,8 +92,7 @@ const handleSourceSelect = async (ds: any) => {
   selectedTables.value = []
   tableSearchQuery.value = ''
   fetchingTables.value = true
-  selectedProfileTag.value = null
-  tagsExpanded.value = false
+  showProfileExplorer.value = false
   tableProfiles.value = []
   activeTab.value = 'system'
   try {
@@ -105,6 +103,7 @@ const handleSourceSelect = async (ds: any) => {
     await loadTableProfiles()
     if (tableProfiles.value.length > 0) {
       activeTab.value = 'profile'
+      showProfileExplorer.value = true
     }
   } catch (e) {
     tables.value = []
@@ -121,79 +120,44 @@ const toggleTable = (tableName: string) => {
   }
 }
 
-const toggleProfileTag = (tag: string) => {
-  if (selectedProfileTag.value === tag) {
-    selectedProfileTag.value = null
-  } else {
-    selectedProfileTag.value = tag
+const profileImportableCount = computed(() =>
+  tableProfiles.value.filter(p => p.is_ignored !== 1).length,
+)
+
+const openProfileExplorer = () => {
+  if (!selectedSource.value) return
+  showProfileExplorer.value = true
+}
+
+const switchToProfileTab = () => {
+  activeTab.value = 'profile'
+  if (profileImportableCount.value > 0) {
+    openProfileExplorer()
   }
 }
 
-const availableTags = computed(() => {
-  const counts: Record<string, number> = {}
-  tableProfiles.value.forEach((p: any) => {
-    if (p.is_ignored === 1) return
-    if (p.ai_tags && Array.isArray(p.ai_tags)) {
-      p.ai_tags.forEach((t: string) => {
-        if (t && t.trim()) {
-          const cleanTag = t.trim()
-          counts[cleanTag] = (counts[cleanTag] || 0) + 1
-        }
-      })
-    }
-  })
-  return Object.entries(counts)
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-})
+const operableFilteredTableNames = computed(() =>
+  filteredTables.value.filter(t => !isAlreadyImported(t.name)).map(t => t.name),
+)
 
-const filteredTableProfiles = computed(() => {
-  // 过滤掉被忽略的表以防干扰
-  let list = tableProfiles.value.filter(p => p.is_ignored !== 1)
-  if (selectedProfileTag.value) {
-    list = list.filter((t) => t.ai_tags && t.ai_tags.includes(selectedProfileTag.value))
-  }
-  if (tableSearchQuery.value) {
-    const q = tableSearchQuery.value.trim().toLowerCase()
-    list = list.filter((p) =>
-      p.table_name.toLowerCase().includes(q) ||
-      (p.ai_term && p.ai_term.toLowerCase().includes(q)) ||
-      (p.ai_description && p.ai_description.toLowerCase().includes(q))
-    )
-  }
-  return list
-})
-
-const selectableFilteredProfiles = computed(() => {
-  return filteredTableProfiles.value.filter(t => !isAlreadyImported(t.table_name))
+const allFilteredTablesSelected = computed(() => {
+  const names = operableFilteredTableNames.value
+  return names.length > 0 && names.every(n => selectedTables.value.includes(n))
 })
 
 const toggleAll = () => {
-  if (activeTab.value === 'system') {
-    const operableTables = filteredTables.value.filter(t => !isAlreadyImported(t.name))
-    const operableTableNames = operableTables.map(t => t.name)
-    const currentlySelectedOperable = selectedTables.value.filter(name => operableTableNames.includes(name))
+  if (activeTab.value !== 'system') return
+  const operableTables = filteredTables.value.filter(t => !isAlreadyImported(t.name))
+  const operableTableNames = operableTables.map(t => t.name)
+  const currentlySelectedOperable = selectedTables.value.filter(name => operableTableNames.includes(name))
 
-    if (currentlySelectedOperable.length === operableTableNames.length && operableTableNames.length > 0) {
-      const idsToRemove = new Set(operableTableNames)
-      selectedTables.value = selectedTables.value.filter(name => !idsToRemove.has(name))
-    } else {
-      const currentSet = new Set(selectedTables.value)
-      operableTableNames.forEach(name => currentSet.add(name))
-      selectedTables.value = Array.from(currentSet)
-    }
+  if (currentlySelectedOperable.length === operableTableNames.length && operableTableNames.length > 0) {
+    const idsToRemove = new Set(operableTableNames)
+    selectedTables.value = selectedTables.value.filter(name => !idsToRemove.has(name))
   } else {
-    const operableTableNames = selectableFilteredProfiles.value.map(t => t.table_name)
-    const currentlySelectedOperable = selectedTables.value.filter(name => operableTableNames.includes(name))
-
-    if (currentlySelectedOperable.length === operableTableNames.length && operableTableNames.length > 0) {
-      const idsToRemove = new Set(operableTableNames)
-      selectedTables.value = selectedTables.value.filter(name => !idsToRemove.has(name))
-    } else {
-      const currentSet = new Set(selectedTables.value)
-      operableTableNames.forEach(name => currentSet.add(name))
-      selectedTables.value = Array.from(currentSet)
-    }
+    const currentSet = new Set(selectedTables.value)
+    operableTableNames.forEach(name => currentSet.add(name))
+    selectedTables.value = Array.from(currentSet)
   }
 }
 
@@ -289,16 +253,16 @@ onMounted(fetchDataSources)
               v-if="tableProfiles.length > 0"
               type="button"
               :class="['px-4 py-2 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5', activeTab === 'profile' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-600']"
-              @click="activeTab = 'profile'"
+              @click="switchToProfileTab"
             >
               AI 摸排资产导入
               <span class="px-1.5 py-0.5 text-[9px] bg-indigo-50 text-indigo-600 rounded-full font-bold">
-                {{ tableProfiles.filter(p => p.is_ignored !== 1).length }}
+                {{ profileImportableCount }}
               </span>
             </button>
           </div>
 
-          <div class="flex justify-between items-center">
+          <div v-if="activeTab === 'system'" class="flex justify-between items-center">
              <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
                 {{ props.initialDataSource ? `从 ${props.initialDataSource} 选择数据表` : '选择目标表' }} ({{ selectedTables.length }})
              </label>
@@ -307,74 +271,17 @@ onMounted(fetchDataSources)
                @click="toggleAll" 
                class="text-[10px] font-bold text-indigo-600 hover:underline px-2 py-1"
              >
-               {{ (activeTab === 'system' ? selectedTables.length === tables.length : selectedTables.length === selectableFilteredProfiles.length) ? '取消全选' : '选择当前全部' }}
+               {{ allFilteredTablesSelected ? '取消全选' : '选择当前全部' }}
              </button>
           </div>
 
           <ClearableInput
-            v-if="tables.length > 0"
+            v-if="tables.length > 0 && activeTab === 'system'"
             v-model="tableSearchQuery"
             show-search-icon
             input-class="py-2 text-xs shadow-sm"
             placeholder="快速过滤表名..."
           />
-
-          <!-- AI 标签过滤排（可折叠） -->
-          <div v-if="activeTab === 'profile' && availableTags.length > 0" class="px-1 shrink-0">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <!-- 全部按钮始终显示 -->
-              <button
-                type="button"
-                @click="selectedProfileTag = null"
-                :class="['px-2.5 py-1 rounded-full text-[9px] font-medium border transition-all cursor-pointer', !selectedProfileTag ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200']"
-              >
-                全部 ({{ tableProfiles.filter(p => p.is_ignored !== 1).length }})
-              </button>
-              <!-- 折叠态：只显示前 N 个标签 -->
-              <template v-if="!tagsExpanded">
-                <button
-                  type="button"
-                  v-for="tag in availableTags.slice(0, TAGS_COLLAPSED_LIMIT)"
-                  :key="tag.name"
-                  @click="toggleProfileTag(tag.name)"
-                  :class="['px-2.5 py-1 rounded-full text-[9px] font-medium border transition-all cursor-pointer', selectedProfileTag === tag.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200']"
-                >
-                  {{ tag.name }} ({{ tag.count }})
-                </button>
-                <!-- 剩余数量指示 + 展开按钮 -->
-                <button
-                  v-if="availableTags.length > TAGS_COLLAPSED_LIMIT"
-                  type="button"
-                  class="px-2.5 py-1 rounded-full text-[9px] font-medium border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-all cursor-pointer flex items-center gap-1"
-                  @click="tagsExpanded = true"
-                >
-                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                  +{{ availableTags.length - TAGS_COLLAPSED_LIMIT }} 更多
-                </button>
-              </template>
-              <!-- 展开态：显示所有标签 -->
-              <template v-else>
-                <button
-                  type="button"
-                  v-for="tag in availableTags"
-                  :key="tag.name"
-                  @click="toggleProfileTag(tag.name)"
-                  :class="['px-2.5 py-1 rounded-full text-[9px] font-medium border transition-all cursor-pointer', selectedProfileTag === tag.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200']"
-                >
-                  {{ tag.name }} ({{ tag.count }})
-                </button>
-                <!-- 收起按钮 -->
-                <button
-                  type="button"
-                  class="px-2.5 py-1 rounded-full text-[9px] font-medium border border-dashed border-gray-300 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-all cursor-pointer flex items-center gap-1"
-                  @click="tagsExpanded = false"
-                >
-                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-                  收起
-                </button>
-              </template>
-            </div>
-          </div>
 
           <div v-if="fetchingTables" class="flex-1 flex flex-col items-center justify-center text-gray-400">
             <ArrowPathIcon class="w-8 h-8 animate-spin mb-2" />
@@ -411,58 +318,56 @@ onMounted(fetchDataSources)
               </div>
             </div>
 
-            <!-- AI 摸排画像列表 -->
-            <div v-else-if="activeTab === 'profile'">
-              <div v-if="filteredTableProfiles.length > 0" class="grid grid-cols-1 gap-2">
-                <div 
-                  v-for="profile in filteredTableProfiles" :key="profile.table_name"
-                  @click="toggleTable(profile.table_name)"
-                  :class="[
-                    selectedTables.includes(profile.table_name) ? 'bg-white border-indigo-600 ring-1 ring-indigo-600' : 'bg-white border-gray-200 hover:border-indigo-300',
-                    isAlreadyImported(profile.table_name) ? 'opacity-40 grayscale cursor-not-allowed border-gray-100 bg-gray-50 ring-0' : 'cursor-pointer'
-                  ]"
-                  class="p-3.5 rounded-xl border transition-all flex flex-col gap-1.5 shadow-sm bg-white"
-                >
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <TableCellsIcon class="w-4 h-4 opacity-40 shrink-0" />
-                      <span class="text-xs font-mono font-bold" :class="selectedTables.includes(profile.table_name) && !isAlreadyImported(profile.table_name) ? 'text-indigo-600 font-bold' : 'text-gray-700'">{{ profile.table_name }}</span>
-                      <span :class="profile.table_type === 'view' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'" class="text-[8px] px-1.5 py-0.2 rounded uppercase font-black">{{ profile.table_type === 'view' ? '视图' : '表' }}</span>
-                      <span 
-                        class="px-1 py-0.1 rounded text-[8px] font-black"
-                        :class="profile.confidence_score >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50' : 'bg-amber-50 text-amber-700 border border-amber-200/50'"
-                      >
-                        {{ profile.confidence_score }} 分
-                      </span>
-                      <span v-if="isAlreadyImported(profile.table_name)" class="text-[9px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded uppercase font-black">Already In</span>
-                    </div>
-                    <div v-if="selectedTables.includes(profile.table_name)" :class="isAlreadyImported(profile.table_name) ? 'bg-gray-300' : 'bg-indigo-600'" class="w-5 h-5 rounded-full flex items-center justify-center text-white shrink-0 animate-in zoom-in duration-200">
-                       <CheckIcon class="w-3 h-3 stroke-[4]" />
-                    </div>
+            <!-- AI 摸排：复用 SQL Lab 表探索器 -->
+            <div v-else-if="activeTab === 'profile'" class="flex-1 flex flex-col gap-4 min-h-0">
+              <div class="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/90 to-white p-5 shadow-sm shrink-0">
+                <div class="flex items-start gap-3">
+                  <div class="p-2 rounded-xl bg-indigo-600 text-white shrink-0">
+                    <SparklesIcon class="w-5 h-5" />
                   </div>
-                  
-                  <!-- 摸排备注 -->
-                  <div v-if="profile.ai_term" class="text-xs text-indigo-600 font-bold">
-                    💡 {{ profile.ai_term }}
-                  </div>
-                  <!-- 摸排用途描述 -->
-                  <div v-if="profile.ai_description" class="text-[11px] text-gray-500 leading-normal max-w-xl truncate">
-                    {{ profile.ai_description }}
-                  </div>
-                  <!-- tags -->
-                  <div v-if="profile.ai_tags && profile.ai_tags.length > 0" class="flex flex-wrap gap-1">
-                    <span 
-                      v-for="tag in profile.ai_tags" :key="tag"
-                      class="px-1.5 py-0.2 rounded text-[8px] font-medium bg-gray-100 text-gray-500"
+                  <div class="min-w-0 flex-1">
+                    <h3 class="text-sm font-bold text-gray-900">高级表探索器</h3>
+                    <p class="text-xs text-gray-500 mt-1 leading-relaxed">
+                      与 SQL Lab 相同的选表体验：关键词搜索、排序、标签筛选、字段画像、数据预览，以及基于摸排画像的关联表推荐。
+                    </p>
+                    <button
+                      type="button"
+                      class="mt-3 inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
+                      @click="openProfileExplorer"
                     >
-                      {{ tag }}
-                    </span>
+                      <TableCellsIcon class="w-4 h-4" />
+                      打开表探索器选表
+                      <span class="opacity-80 font-medium">（{{ profileImportableCount }} 张可导入）</span>
+                    </button>
                   </div>
                 </div>
               </div>
-              <div v-else class="flex-1 flex flex-col items-center justify-center py-12 text-gray-400">
-                 <MagnifyingGlassIcon class="w-8 h-8 mb-2 opacity-20" />
-                 <p class="text-xs font-bold uppercase tracking-widest">没有匹配的表画像记录</p>
+
+              <div class="flex-1 min-h-0 flex flex-col gap-2">
+                <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 shrink-0">
+                  已选表 ({{ selectedTables.length }})
+                </label>
+                <div v-if="selectedTables.length" class="flex flex-wrap gap-2 content-start overflow-y-auto custom-scrollbar flex-1 min-h-0 p-1">
+                  <button
+                    v-for="name in selectedTables"
+                    :key="name"
+                    type="button"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono border transition-colors"
+                    :class="isAlreadyImported(name)
+                      ? 'bg-gray-50 border-gray-200 text-gray-400 line-through'
+                      : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50'"
+                    :title="isAlreadyImported(name) ? '已导入，将自动跳过' : '点击移除'"
+                    @click="toggleTable(name)"
+                  >
+                    {{ name }}
+                    <XMarkIcon v-if="!isAlreadyImported(name)" class="w-3.5 h-3.5 opacity-60" />
+                  </button>
+                </div>
+                <div v-else class="flex-1 flex flex-col items-center justify-center py-10 text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white/60">
+                  <TableCellsIcon class="w-10 h-10 mb-2 opacity-20" />
+                  <p class="text-xs font-bold">尚未选择表</p>
+                  <p class="text-[11px] mt-1">点击上方按钮，在探索器中搜索、预览并勾选要导入的表</p>
+                </div>
               </div>
             </div>
           </template>
@@ -486,6 +391,19 @@ onMounted(fetchDataSources)
         </button>
       </div>
     </div>
+
+    <LabTableExplorer
+      v-if="showProfileExplorer && selectedSource"
+      :source-id="selectedSource.id"
+      v-model="selectedTables"
+      :source-name="selectedSource.source_name"
+      :excluded-tables="props.existingTableNames || []"
+      initial-scope="profiled"
+      overlay-z-class="z-[130]"
+      confirm-label="确认选表"
+      selection-hint="将用于元数据导入"
+      @close="showProfileExplorer = false"
+    />
   </div>
 </template>
 
