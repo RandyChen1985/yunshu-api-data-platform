@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import axios from '@/utils/axios'
 import { useToast } from '@/composables/useToast'
 import {
@@ -36,12 +36,20 @@ const props = withDefaults(defineProps<{
   includeIgnored?: boolean
   allowIgnoreToggle?: boolean
   defaultScope?: 'all' | 'profiled'
+  initialScope?: 'all' | 'profiled' | 'favorites' | 'recent'
+  excludedTables?: string[]
+  overlayZClass?: string
+  confirmLabel?: string
+  selectionHint?: string
 }>(), {
   modelValue: () => [],
   mode: 'select',
   includeIgnored: false,
   allowIgnoreToggle: false,
   defaultScope: 'profiled',
+  excludedTables: () => [],
+  confirmLabel: '确认并关闭',
+  selectionHint: '同步到侧栏勾选',
 })
 
 const emit = defineEmits<{
@@ -52,6 +60,11 @@ const emit = defineEmits<{
 const { showToast } = useToast()
 
 const isBrowse = computed(() => props.mode === 'browse')
+const overlayZClass = computed(() =>
+  props.overlayZClass || (isBrowse.value ? 'z-[9990]' : 'z-[120]'),
+)
+const excludedSet = computed(() => new Set(props.excludedTables || []))
+const isExcluded = (name: string) => excludedSet.value.has(name)
 const searchQ = ref('')
 const scope = ref<'all' | 'profiled' | 'favorites' | 'recent'>('all')
 const selectedTag = ref<string | null>(null)
@@ -60,21 +73,81 @@ const tags = ref<{ name: string; count: number }[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 40
+const SORT_OPTIONS = [
+  { value: 'default', label: '默认排序' },
+  { value: 'relevance', label: '相关度优先' },
+  { value: 'confidence_desc', label: '置信度 ↓' },
+  { value: 'confidence_asc', label: '置信度 ↑' },
+  { value: 'name_asc', label: '表名 A→Z' },
+  { value: 'name_desc', label: '表名 Z→A' },
+  { value: 'term_asc', label: '中文术语 A→Z' },
+] as const
+type SortOptionValue = (typeof SORT_OPTIONS)[number]['value']
+
+const loadSortOption = (): SortOptionValue => {
+  const saved = localStorage.getItem('sqllab_table_explorer_sort') || ''
+  return SORT_OPTIONS.some(o => o.value === saved) ? (saved as SortOptionValue) : 'default'
+}
+
+const sortOption = ref<SortOptionValue>(loadSortOption())
+
+const parseSortParams = (key: SortOptionValue): { sort_by: string; sort_order: string } => {
+  switch (key) {
+    case 'relevance':
+      return { sort_by: 'relevance', sort_order: 'desc' }
+    case 'confidence_desc':
+      return { sort_by: 'confidence', sort_order: 'desc' }
+    case 'confidence_asc':
+      return { sort_by: 'confidence', sort_order: 'asc' }
+    case 'name_asc':
+      return { sort_by: 'name', sort_order: 'asc' }
+    case 'name_desc':
+      return { sort_by: 'name', sort_order: 'desc' }
+    case 'term_asc':
+      return { sort_by: 'term', sort_order: 'asc' }
+    default:
+      return { sort_by: 'default', sort_order: 'desc' }
+  }
+}
+
+const onSortChange = () => {
+  localStorage.setItem('sqllab_table_explorer_sort', sortOption.value)
+  page.value = 1
+  fetchResults()
+}
 const loading = ref(false)
 const tagsLoading = ref(false)
 const previewTable = ref<string | null>(null)
 const previewDetail = ref<any>(null)
 const previewLoading = ref(false)
+const relatedTables = ref<{
+  table_name: string
+  ai_term?: string | null
+  confidence: number
+  reason: string
+  join_hint?: string | null
+}[]>([])
+const relatedLoading = ref(false)
+const relatedMessage = ref<string | null>(null)
 const expandedDataTable = ref<string | null>(null)
 const dataPreviewLoading = ref(false)
 const dataPreviewError = ref('')
-const dataPreviewData = ref<{ columns: { name: string }[]; rows: any[][] } | null>(null)
+const DATA_PREVIEW_LIMIT = 10
+const dataPreviewData = ref<{ columns: { name: string }[]; rows: any[][]; total_count?: number | null } | null>(null)
 const draftSelected = ref<string[]>([])
 const togglingIgnore = ref<Record<string, boolean>>({})
+const resultsListRef = ref<HTMLElement | null>(null)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const rowSerial = (idx: number) => (page.value - 1) * pageSize + idx + 1
+
+const scrollResultsToTop = () => {
+  nextTick(() => {
+    if (resultsListRef.value) resultsListRef.value.scrollTop = 0
+  })
+}
 const previewItem = computed(() => items.value.find(i => i.table_name === previewTable.value))
 
 const allScopeOptions = [
@@ -94,6 +167,12 @@ const tagsUrl = computed(() =>
   isBrowse.value && props.sourceId
     ? `/api/portal/datasource/datasources/${props.sourceId}/table-profiles/tags`
     : '/api/portal/lab/table-tags',
+)
+
+const relatedTablesUrl = computed(() =>
+  isBrowse.value && props.sourceId
+    ? `/api/portal/datasource/datasources/${props.sourceId}/table-profiles/related`
+    : '/api/portal/lab/table-related',
 )
 
 const listIndentClass = computed(() => (isBrowse.value ? 'ml-4' : 'ml-9'))
@@ -116,12 +195,15 @@ const fetchResults = async () => {
   if (!props.sourceId) return
   loading.value = true
   try {
+    const sortParams = parseSortParams(sortOption.value)
     if (isBrowse.value) {
       const params: Record<string, any> = {
         scope: scope.value,
         page: page.value,
         page_size: pageSize,
         include_ignored: props.includeIgnored,
+        sort_by: sortParams.sort_by,
+        sort_order: sortParams.sort_order,
       }
       if (searchQ.value.trim()) params.q = searchQ.value.trim()
       if (selectedTag.value) params.tag = selectedTag.value
@@ -137,6 +219,8 @@ const fetchResults = async () => {
         scope: scope.value,
         page: page.value,
         page_size: pageSize,
+        sort_by: sortParams.sort_by,
+        sort_order: sortParams.sort_order,
       }
       if (searchQ.value.trim()) params.q = searchQ.value.trim()
       if (selectedTag.value) params.tag = selectedTag.value
@@ -155,10 +239,16 @@ const fetchResults = async () => {
     }
     if (previewTable.value && !items.value.some(i => i.table_name === previewTable.value)) {
       previewTable.value = items.value[0]?.table_name || null
-      if (previewTable.value) loadPreviewDetail(previewTable.value)
+      if (previewTable.value) {
+        loadPreviewDetail(previewTable.value)
+        loadRelatedTables(previewTable.value)
+      }
     } else if (!previewTable.value && items.value.length) {
       previewTable.value = items.value[0]?.table_name ?? null
-      if (previewTable.value) loadPreviewDetail(previewTable.value)
+      if (previewTable.value) {
+        loadPreviewDetail(previewTable.value)
+        loadRelatedTables(previewTable.value)
+      }
     }
   } catch {
     showToast('搜索表失败', 'error')
@@ -166,6 +256,7 @@ const fetchResults = async () => {
     total.value = 0
   } finally {
     loading.value = false
+    scrollResultsToTop()
   }
 }
 
@@ -193,6 +284,10 @@ const selectTag = (tag: string | null) => {
 const isInDraft = (name: string) => draftSelected.value.includes(name)
 
 const toggleDraft = (name: string) => {
+  if (isExcluded(name)) {
+    showToast('该表已导入，无法重复选择', 'info')
+    return
+  }
   if (isInDraft(name)) {
     draftSelected.value = draftSelected.value.filter(t => t !== name)
   } else {
@@ -216,9 +311,61 @@ const loadPreviewDetail = async (tableName: string) => {
   }
 }
 
+const loadRelatedTables = async (tableName: string) => {
+  if (!props.sourceId || !tableName) return
+  relatedLoading.value = true
+  relatedTables.value = []
+  relatedMessage.value = null
+  try {
+    const url = relatedTablesUrl.value
+    const params = isBrowse.value
+      ? { table: tableName, limit: 15 }
+      : { source_id: props.sourceId, table: tableName, limit: 15 }
+    const res = await axios.get(url, { params })
+    relatedTables.value = res.data?.items || []
+    relatedMessage.value = res.data?.message || null
+  } catch {
+    relatedTables.value = []
+    relatedMessage.value = '加载关联推荐失败'
+  } finally {
+    relatedLoading.value = false
+  }
+}
+
 const onRowClick = (item: ExplorerTableItem) => {
   previewTable.value = item.table_name
   loadPreviewDetail(item.table_name)
+  loadRelatedTables(item.table_name)
+}
+
+const addRelatedToDraft = (tableName: string) => {
+  if (isBrowse.value || isInDraft(tableName) || isExcluded(tableName)) return
+  draftSelected.value = [...draftSelected.value, tableName]
+  showToast(`已加入已选：${tableName}`, 'success')
+}
+
+const addAllRelatedToDraft = () => {
+  if (isBrowse.value) return
+  const toAdd = relatedTables.value
+    .map(r => r.table_name)
+    .filter(t => !isInDraft(t) && !isExcluded(t))
+  if (!toAdd.length) {
+    showToast('关联表均已在已选列表中', 'info')
+    return
+  }
+  draftSelected.value = [...draftSelected.value, ...toAdd]
+  showToast(`已加入 ${toAdd.length} 张关联表`, 'success')
+}
+
+const focusRelatedTable = (tableName: string) => {
+  const item = items.value.find(i => i.table_name === tableName)
+  if (item) {
+    onRowClick(item)
+    return
+  }
+  previewTable.value = tableName
+  loadPreviewDetail(tableName)
+  loadRelatedTables(tableName)
 }
 
 const colName = (col: string | { name: string }) => (typeof col === 'string' ? col : col.name)
@@ -240,7 +387,8 @@ const toggleDataPreview = async (tableName: string) => {
       source_id: props.sourceId,
       sql: `SELECT * FROM ${tableName}`,
       params: {},
-      limit: 10,
+      limit: DATA_PREVIEW_LIMIT,
+      include_total: true,
     })
     dataPreviewData.value = res.data
   } catch (e: any) {
@@ -283,7 +431,7 @@ const onKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   draftSelected.value = [...(props.modelValue || [])]
-  scope.value = isBrowse.value ? props.defaultScope : 'all'
+  scope.value = props.initialScope ?? (isBrowse.value ? props.defaultScope : 'all')
   fetchTags()
   fetchResults()
   document.addEventListener('keydown', onKeydown)
@@ -306,7 +454,7 @@ watch(page, fetchResults)
 <template>
   <div
     class="fixed inset-0 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm"
-    :class="isBrowse ? 'z-[9990]' : 'z-[120]'"
+    :class="overlayZClass"
     @click.self="emit('close')"
   >
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[82vh] flex flex-col overflow-hidden">
@@ -333,15 +481,25 @@ watch(page, fetchResults)
 
       <!-- Search bar -->
       <div class="px-5 py-3 border-b shrink-0">
-        <div class="relative">
-          <MagnifyingGlassIcon class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            v-model="searchQ"
-            type="text"
-            :placeholder="isBrowse ? '搜索表名 / 中文术语 / 描述 / 标签...' : '搜索表名 / 中文术语 / 描述 / 标签 / 个人备注...'"
-            class="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
-            @input="scheduleSearch"
-          />
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1 min-w-0">
+            <MagnifyingGlassIcon class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              v-model="searchQ"
+              type="text"
+              :placeholder="isBrowse ? '搜索表名 / 中文术语 / 描述 / 标签...' : '搜索表名 / 中文术语 / 描述 / 标签 / 个人备注...'"
+              class="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
+              @input="scheduleSearch"
+            />
+          </div>
+          <select
+            v-model="sortOption"
+            class="shrink-0 h-[42px] px-2.5 text-xs border border-gray-200 rounded-xl bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+            title="排序方式"
+            @change="onSortChange"
+          >
+            <option v-for="opt in SORT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
         </div>
       </div>
 
@@ -395,7 +553,7 @@ watch(page, fetchResults)
             </div>
           </div>
 
-          <div class="flex-1 overflow-y-auto custom-scrollbar">
+          <div ref="resultsListRef" class="flex-1 overflow-y-auto custom-scrollbar">
             <div v-if="loading" class="py-16 text-center text-gray-400 text-sm">搜索中...</div>
             <div v-else-if="!isBrowse && scope === 'recent' && !recentTables?.length" class="py-16 text-center text-gray-400 text-xs px-6">
               暂无最近使用的表<br />从探索器或侧栏选中表后会记录在这里
@@ -403,7 +561,7 @@ watch(page, fetchResults)
             <div v-else-if="!items.length" class="py-16 text-center text-gray-400 text-xs">无匹配结果，换个关键词试试</div>
 
             <div
-              v-for="item in items"
+              v-for="(item, idx) in items"
               :key="item.table_name"
               class="border-b"
               :class="[
@@ -412,16 +570,25 @@ watch(page, fetchResults)
               ]"
             >
               <div
-                class="px-4 py-2.5 cursor-pointer transition-colors flex items-start gap-3 group"
+                class="px-4 py-2.5 cursor-pointer transition-colors flex items-start gap-2 group"
                 :class="previewTable === item.table_name ? 'border-l-2 border-l-indigo-500' : 'hover:bg-gray-50 border-l-2 border-l-transparent'"
                 @click="onRowClick(item)"
               >
+                <span
+                  class="shrink-0 w-8 text-right text-[10px] font-semibold text-gray-400 tabular-nums pt-1"
+                  :title="`第 ${rowSerial(idx)} 条`"
+                >{{ rowSerial(idx) }}</span>
                 <button
                   v-if="!isBrowse"
                   type="button"
                   class="mt-0.5 shrink-0 w-6 h-6 rounded-md border flex items-center justify-center transition-colors"
-                  :class="isInDraft(item.table_name) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-200 text-gray-400 hover:border-indigo-400 hover:text-indigo-600'"
-                  :title="isInDraft(item.table_name) ? '移出已选' : '加入已选'"
+                  :class="isExcluded(item.table_name)
+                    ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                    : isInDraft(item.table_name)
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'border-gray-200 text-gray-400 hover:border-indigo-400 hover:text-indigo-600'"
+                  :title="isExcluded(item.table_name) ? '已导入' : (isInDraft(item.table_name) ? '移出已选' : '加入已选')"
+                  :disabled="isExcluded(item.table_name)"
                   @click.stop="toggleDraft(item.table_name)"
                 >
                   <CheckIcon v-if="isInDraft(item.table_name)" class="w-3.5 h-3.5" />
@@ -449,6 +616,7 @@ watch(page, fetchResults)
                       <span v-if="item.confidence_score != null" class="text-[9px] px-1 py-0.5 rounded font-bold bg-green-100 text-green-700 shrink-0">{{ item.confidence_score }}%</span>
                       <span v-if="item.status === 3" class="text-[9px] px-1 py-0.5 rounded font-bold bg-red-100 text-red-600 shrink-0">分析失败</span>
                       <span v-if="item.is_temporary" class="text-[9px] px-1 py-0.5 rounded font-bold bg-amber-100 text-amber-800 shrink-0">临时表</span>
+                      <span v-if="isExcluded(item.table_name)" class="text-[9px] px-1 py-0.5 rounded font-bold bg-gray-200 text-gray-500 shrink-0">已导入</span>
                       <StarSolidIcon v-if="item.is_favorite" class="w-3.5 h-3.5 text-amber-500 shrink-0" />
                     </div>
                     <button
@@ -457,7 +625,7 @@ watch(page, fetchResults)
                       :class="expandedDataTable === item.table_name
                         ? 'bg-indigo-600 text-white border-indigo-600'
                         : 'bg-white text-gray-500 border-gray-200 opacity-0 group-hover:opacity-100 hover:border-indigo-300 hover:text-indigo-600'"
-                      :title="expandedDataTable === item.table_name ? '收起数据预览' : '预览前 10 条数据'"
+                      :title="expandedDataTable === item.table_name ? '收起数据预览' : `预览前 ${DATA_PREVIEW_LIMIT} 条并统计总行数`"
                       @click.stop="toggleDataPreview(item.table_name)"
                     >
                       <EyeIcon class="w-3.5 h-3.5" />
@@ -478,15 +646,22 @@ watch(page, fetchResults)
               >
                 <div v-if="dataPreviewLoading" class="py-4 text-center text-gray-400 text-xs">
                   <div class="inline-block w-4 h-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mr-2 align-middle" />
-                  正在加载前 10 条数据...
+                  正在加载数据...
                 </div>
                 <div v-else-if="dataPreviewError" class="py-2 px-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[11px]">
                   {{ dataPreviewError }}
                 </div>
                 <div v-else-if="dataPreviewData" class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                   <div class="px-3 py-1.5 border-b bg-gray-50 flex items-center justify-between">
-                    <span class="text-[10px] font-bold text-gray-400">数据预览 (最多 10 行)</span>
-                    <span class="text-[10px] text-gray-400">{{ dataPreviewData.rows?.length || 0 }} 行</span>
+                    <span class="text-[10px] font-bold text-gray-400">数据预览 (最多 {{ DATA_PREVIEW_LIMIT }} 行)</span>
+                    <span class="text-[10px] text-gray-500 font-medium tabular-nums">
+                      <template v-if="dataPreviewData.total_count != null">
+                        {{ dataPreviewData.rows?.length || 0 }}/{{ dataPreviewData.total_count }} 条
+                      </template>
+                      <template v-else>
+                        {{ dataPreviewData.rows?.length || 0 }} 行
+                      </template>
+                    </span>
                   </div>
                   <div class="overflow-x-auto custom-scrollbar max-h-48">
                     <table class="min-w-full divide-y divide-gray-100">
@@ -531,6 +706,59 @@ watch(page, fetchResults)
                 <span v-for="tg in previewItem.ai_tags" :key="tg" class="text-[9px] px-1.5 py-0.5 bg-white border rounded-full text-gray-600">{{ tg }}</span>
               </div>
             </template>
+
+            <!-- Related tables -->
+            <div class="mt-2 border border-indigo-100 rounded-lg bg-indigo-50/50 overflow-hidden">
+              <div class="px-2.5 py-1.5 border-b border-indigo-100/80 flex items-center justify-between gap-2">
+                <span class="text-[10px] font-bold text-indigo-800">可能关联的表</span>
+                <button
+                  v-if="!isBrowse && relatedTables.length"
+                  type="button"
+                  class="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 px-1.5 py-0.5 rounded hover:bg-indigo-100"
+                  @click="addAllRelatedToDraft"
+                >全部加入</button>
+              </div>
+              <div v-if="relatedLoading" class="px-2.5 py-3 text-[10px] text-gray-400 italic">分析关联中...</div>
+              <div v-else-if="!relatedTables.length" class="px-2.5 py-2 text-[10px] text-gray-500 leading-relaxed">
+                {{ relatedMessage || '暂无推荐，请确认该表已完成摸排' }}
+              </div>
+              <ul v-else class="max-h-36 overflow-y-auto custom-scrollbar divide-y divide-indigo-100/60">
+                <li
+                  v-for="rel in relatedTables"
+                  :key="rel.table_name"
+                  class="px-2.5 py-2 hover:bg-white/70 transition-colors"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      class="min-w-0 flex-1 text-left"
+                      @click="focusRelatedTable(rel.table_name)"
+                    >
+                      <div class="font-mono text-[10px] font-bold text-gray-800 truncate" :title="rel.table_name">{{ rel.table_name }}</div>
+                      <div v-if="rel.ai_term" class="text-[9px] text-indigo-600 truncate">{{ rel.ai_term }}</div>
+                      <div class="text-[9px] text-gray-500 mt-0.5 line-clamp-2" :title="rel.reason">{{ rel.reason }}</div>
+                    </button>
+                    <div class="shrink-0 flex flex-col items-end gap-1">
+                      <span class="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded">{{ Math.round(rel.confidence * 100) }}%</span>
+                      <button
+                        v-if="!isBrowse"
+                        type="button"
+                        class="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors"
+                        :class="isExcluded(rel.table_name)
+                          ? 'text-gray-300 border-gray-100 cursor-not-allowed'
+                          : isInDraft(rel.table_name)
+                            ? 'text-gray-400 border-gray-200 cursor-default'
+                            : 'text-indigo-600 border-indigo-200 hover:bg-indigo-100'"
+                        :disabled="isInDraft(rel.table_name) || isExcluded(rel.table_name)"
+                        @click.stop="addRelatedToDraft(rel.table_name)"
+                      >{{ isExcluded(rel.table_name) ? '已导入' : (isInDraft(rel.table_name) ? '已选' : '加入') }}</button>
+                    </div>
+                  </div>
+                  <div v-if="rel.join_hint" class="mt-1 text-[8px] font-mono text-gray-400 truncate" :title="rel.join_hint">{{ rel.join_hint }}</div>
+                </li>
+              </ul>
+            </div>
+
             <div v-if="previewLoading" class="text-[11px] text-gray-400 italic">加载字段...</div>
             <div v-else-if="previewDetail?.columns_profile?.length" class="mt-2">
               <div class="text-[10px] font-bold text-gray-400 mb-1">字段画像 ({{ previewDetail.columns_profile.length }})</div>
@@ -575,7 +803,7 @@ watch(page, fetchResults)
       <div v-else class="px-5 py-3 border-t bg-white shrink-0 flex items-center gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between gap-2 mb-1">
-            <span class="text-[10px] text-gray-400">已选 {{ draftSelected.length }} 张表（同步到侧栏勾选）</span>
+            <span class="text-[10px] text-gray-400">已选 {{ draftSelected.length }} 张表（{{ selectionHint }}）</span>
             <button
               v-if="draftSelected.length"
               type="button"
@@ -598,7 +826,7 @@ watch(page, fetchResults)
           type="button"
           class="px-5 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm"
           @click="confirmSelection"
-        >确认并关闭</button>
+        >{{ confirmLabel }}</button>
       </div>
     </div>
   </div>
