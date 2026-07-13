@@ -60,6 +60,48 @@ const tags = ref<{ name: string; count: number }[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 40
+const SORT_OPTIONS = [
+  { value: 'default', label: '默认排序' },
+  { value: 'relevance', label: '相关度优先' },
+  { value: 'confidence_desc', label: '置信度 ↓' },
+  { value: 'confidence_asc', label: '置信度 ↑' },
+  { value: 'name_asc', label: '表名 A→Z' },
+  { value: 'name_desc', label: '表名 Z→A' },
+  { value: 'term_asc', label: '中文术语 A→Z' },
+] as const
+type SortOptionValue = (typeof SORT_OPTIONS)[number]['value']
+
+const loadSortOption = (): SortOptionValue => {
+  const saved = localStorage.getItem('sqllab_table_explorer_sort') || ''
+  return SORT_OPTIONS.some(o => o.value === saved) ? (saved as SortOptionValue) : 'default'
+}
+
+const sortOption = ref<SortOptionValue>(loadSortOption())
+
+const parseSortParams = (key: SortOptionValue): { sort_by: string; sort_order: string } => {
+  switch (key) {
+    case 'relevance':
+      return { sort_by: 'relevance', sort_order: 'desc' }
+    case 'confidence_desc':
+      return { sort_by: 'confidence', sort_order: 'desc' }
+    case 'confidence_asc':
+      return { sort_by: 'confidence', sort_order: 'asc' }
+    case 'name_asc':
+      return { sort_by: 'name', sort_order: 'asc' }
+    case 'name_desc':
+      return { sort_by: 'name', sort_order: 'desc' }
+    case 'term_asc':
+      return { sort_by: 'term', sort_order: 'asc' }
+    default:
+      return { sort_by: 'default', sort_order: 'desc' }
+  }
+}
+
+const onSortChange = () => {
+  localStorage.setItem('sqllab_table_explorer_sort', sortOption.value)
+  page.value = 1
+  fetchResults()
+}
 const loading = ref(false)
 const tagsLoading = ref(false)
 const previewTable = ref<string | null>(null)
@@ -68,7 +110,8 @@ const previewLoading = ref(false)
 const expandedDataTable = ref<string | null>(null)
 const dataPreviewLoading = ref(false)
 const dataPreviewError = ref('')
-const dataPreviewData = ref<{ columns: { name: string }[]; rows: any[][] } | null>(null)
+const DATA_PREVIEW_LIMIT = 10
+const dataPreviewData = ref<{ columns: { name: string }[]; rows: any[][]; total_count?: number | null } | null>(null)
 const draftSelected = ref<string[]>([])
 const togglingIgnore = ref<Record<string, boolean>>({})
 
@@ -116,12 +159,15 @@ const fetchResults = async () => {
   if (!props.sourceId) return
   loading.value = true
   try {
+    const sortParams = parseSortParams(sortOption.value)
     if (isBrowse.value) {
       const params: Record<string, any> = {
         scope: scope.value,
         page: page.value,
         page_size: pageSize,
         include_ignored: props.includeIgnored,
+        sort_by: sortParams.sort_by,
+        sort_order: sortParams.sort_order,
       }
       if (searchQ.value.trim()) params.q = searchQ.value.trim()
       if (selectedTag.value) params.tag = selectedTag.value
@@ -137,6 +183,8 @@ const fetchResults = async () => {
         scope: scope.value,
         page: page.value,
         page_size: pageSize,
+        sort_by: sortParams.sort_by,
+        sort_order: sortParams.sort_order,
       }
       if (searchQ.value.trim()) params.q = searchQ.value.trim()
       if (selectedTag.value) params.tag = selectedTag.value
@@ -240,7 +288,8 @@ const toggleDataPreview = async (tableName: string) => {
       source_id: props.sourceId,
       sql: `SELECT * FROM ${tableName}`,
       params: {},
-      limit: 10,
+      limit: DATA_PREVIEW_LIMIT,
+      include_total: true,
     })
     dataPreviewData.value = res.data
   } catch (e: any) {
@@ -333,15 +382,25 @@ watch(page, fetchResults)
 
       <!-- Search bar -->
       <div class="px-5 py-3 border-b shrink-0">
-        <div class="relative">
-          <MagnifyingGlassIcon class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            v-model="searchQ"
-            type="text"
-            :placeholder="isBrowse ? '搜索表名 / 中文术语 / 描述 / 标签...' : '搜索表名 / 中文术语 / 描述 / 标签 / 个人备注...'"
-            class="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
-            @input="scheduleSearch"
-          />
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1 min-w-0">
+            <MagnifyingGlassIcon class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              v-model="searchQ"
+              type="text"
+              :placeholder="isBrowse ? '搜索表名 / 中文术语 / 描述 / 标签...' : '搜索表名 / 中文术语 / 描述 / 标签 / 个人备注...'"
+              class="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
+              @input="scheduleSearch"
+            />
+          </div>
+          <select
+            v-model="sortOption"
+            class="shrink-0 h-[42px] px-2.5 text-xs border border-gray-200 rounded-xl bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+            title="排序方式"
+            @change="onSortChange"
+          >
+            <option v-for="opt in SORT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
         </div>
       </div>
 
@@ -457,7 +516,7 @@ watch(page, fetchResults)
                       :class="expandedDataTable === item.table_name
                         ? 'bg-indigo-600 text-white border-indigo-600'
                         : 'bg-white text-gray-500 border-gray-200 opacity-0 group-hover:opacity-100 hover:border-indigo-300 hover:text-indigo-600'"
-                      :title="expandedDataTable === item.table_name ? '收起数据预览' : '预览前 10 条数据'"
+                      :title="expandedDataTable === item.table_name ? '收起数据预览' : `预览前 ${DATA_PREVIEW_LIMIT} 条并统计总行数`"
                       @click.stop="toggleDataPreview(item.table_name)"
                     >
                       <EyeIcon class="w-3.5 h-3.5" />
@@ -478,15 +537,22 @@ watch(page, fetchResults)
               >
                 <div v-if="dataPreviewLoading" class="py-4 text-center text-gray-400 text-xs">
                   <div class="inline-block w-4 h-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mr-2 align-middle" />
-                  正在加载前 10 条数据...
+                  正在加载数据...
                 </div>
                 <div v-else-if="dataPreviewError" class="py-2 px-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[11px]">
                   {{ dataPreviewError }}
                 </div>
                 <div v-else-if="dataPreviewData" class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                   <div class="px-3 py-1.5 border-b bg-gray-50 flex items-center justify-between">
-                    <span class="text-[10px] font-bold text-gray-400">数据预览 (最多 10 行)</span>
-                    <span class="text-[10px] text-gray-400">{{ dataPreviewData.rows?.length || 0 }} 行</span>
+                    <span class="text-[10px] font-bold text-gray-400">数据预览 (最多 {{ DATA_PREVIEW_LIMIT }} 行)</span>
+                    <span class="text-[10px] text-gray-500 font-medium tabular-nums">
+                      <template v-if="dataPreviewData.total_count != null">
+                        {{ dataPreviewData.rows?.length || 0 }}/{{ dataPreviewData.total_count }} 条
+                      </template>
+                      <template v-else>
+                        {{ dataPreviewData.rows?.length || 0 }} 行
+                      </template>
+                    </span>
                   </div>
                   <div class="overflow-x-auto custom-scrollbar max-h-48">
                     <table class="min-w-full divide-y divide-gray-100">

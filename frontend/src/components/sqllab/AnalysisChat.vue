@@ -123,7 +123,7 @@ const loadSession = async (sessionId: number) => {
   try {
     const res = await axios.get(`/api/portal/lab/analysis-sessions/${sessionId}`);
     const data = res.data;
-    const msgs = (data.messages_json || []) as Message[];
+    const msgs = normalizeLoadedMessages((data.messages_json || []) as Message[]);
     messages.value = msgs;
     lastAnalyzedQuery.value = data.sql_text || props.initialQuery || "";
     suppressAutoStart.value = true;
@@ -207,6 +207,75 @@ const scrollToBottom = () => {
   });
 };
 
+const findJsonArrayEnd = (text: string, start: number): number => {
+  if (text[start] !== '[') return -1
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (escape) {
+      escape = false
+      continue
+    }
+    if (ch === '\\' && inString) {
+      escape = true
+      continue
+    }
+    if (ch === '"') {
+      inString = !inString
+      continue
+    }
+    if (!inString) {
+      if (ch === '[') depth++
+      else if (ch === ']') {
+        depth--
+        if (depth === 0) return i
+      }
+    }
+  }
+  return -1
+}
+
+const parseSuggestionArray = (arrayStr: string): string[] => {
+  const attempts = [
+    arrayStr,
+    arrayStr.replace(/'/g, '"'),
+    arrayStr.replace(/,\s*]/g, ']'),
+  ]
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (Array.isArray(parsed)) {
+        return parsed.map((s) => String(s).trim()).filter(Boolean)
+      }
+    } catch {
+      // try next
+    }
+  }
+  return []
+}
+
+const extractGuidedSuggestions = (content: string): { cleanContent: string; suggestions: string[] } => {
+  const markerRegex = /\[Suggestions?:\s*/i
+  const match = markerRegex.exec(content)
+  if (!match) return { cleanContent: content, suggestions: [] }
+
+  const arrayStart = match.index + match[0].length
+  const arrayEnd = findJsonArrayEnd(content, arrayStart)
+  if (arrayEnd === -1) return { cleanContent: content, suggestions: [] }
+
+  const suggestions = parseSuggestionArray(content.slice(arrayStart, arrayEnd + 1))
+  if (!suggestions.length) return { cleanContent: content, suggestions: [] }
+
+  let removeEnd = arrayEnd + 1
+  while (removeEnd < content.length && /\s/.test(content.charAt(removeEnd))) removeEnd++
+  if (content.charAt(removeEnd) === ']') removeEnd++
+
+  const cleanContent = (content.slice(0, match.index) + content.slice(removeEnd)).trim()
+  return { cleanContent, suggestions }
+}
+
 const parseMessageContent = (content: string) => {
   let cleanContent = content;
 
@@ -225,21 +294,24 @@ const parseMessageContent = (content: string) => {
   }
   cleanContent = cleanContent.replace(chartRegex, "").trim();
 
-  // 2. Extract [Suggestions: ["...", "..."]]
-  const suggestRegex = /\[Suggestions:\s*(\[[\s\S]*?\])\]/;
-  let suggestions: string[] = [];
-  const suggestMatch = cleanContent.match(suggestRegex);
-  if (suggestMatch && suggestMatch[1]) {
-    try {
-      suggestions = JSON.parse(suggestMatch[1]);
-    } catch (e) {
-      console.error("Suggestions parse error", e);
-    }
-  }
-  cleanContent = cleanContent.replace(suggestRegex, "").trim();
+  // 2. Extract guided suggestions — tolerate Suggestion/Suggestions and nested brackets
+  const { cleanContent: withoutSuggestions, suggestions } = extractGuidedSuggestions(cleanContent);
+  cleanContent = withoutSuggestions;
 
   return { content: cleanContent, charts, suggestions };
 };
+
+const normalizeLoadedMessages = (msgs: Message[]): Message[] =>
+  msgs.map((msg) => {
+    if (msg.role !== 'assistant' || !msg.content) return msg
+    const parsed = parseMessageContent(msg.content)
+    return {
+      ...msg,
+      content: parsed.content,
+      charts: parsed.charts.length ? parsed.charts : msg.charts,
+      suggestions: parsed.suggestions.length ? parsed.suggestions : msg.suggestions,
+    }
+  })
 
   const sendMessage = async (customPrompt?: string) => {
     const text = customPrompt || inputText.value.trim()
@@ -278,14 +350,14 @@ const parseMessageContent = (content: string) => {
       // 限制发送给 AI 的数据量，防止 payload 过大导致 400 错误
       const contextObj = {
         sql: props.initialQuery,
-        sample_data: props.data?.slice(0, 100), // 最多发送 100 行
+        sample_data: props.data?.slice(0, 200), // 最多发送 200 行
         columns: props.columns
       }
       
       let contextStr = JSON.stringify(contextObj)
-      // 如果上下文依然过长（超过 30KB 字符），进行物理截断
-      if (contextStr.length > 30000) {
-        contextStr = contextStr.substring(0, 30000) + "... [Data truncated due to size limit]"
+      // 如果上下文依然过长（超过 50KB 字符），进行物理截断
+      if (contextStr.length > 50000) {
+        contextStr = contextStr.substring(0, 50000) + "... [Data truncated due to size limit]"
       }
   
       const API_BASE = import.meta.env.VITE_API_BASE_URL || "";

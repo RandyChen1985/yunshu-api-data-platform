@@ -78,7 +78,15 @@ const detailActiveTab = ref<'structure' | 'preview'>('preview')
 const detailPreviewData = ref<any>(null)
 const detailPreviewLoading = ref(false)
 const detailPreviewError = ref('')
-const detailPreviewLimit = ref(50)
+const DETAIL_PREVIEW_LIMIT_OPTIONS = [50, 100, 200, 500] as const
+type DetailPreviewLimit = (typeof DETAIL_PREVIEW_LIMIT_OPTIONS)[number]
+
+const loadDetailPreviewLimit = (): DetailPreviewLimit => {
+  const saved = Number(localStorage.getItem('sqllab_detail_preview_limit'))
+  return (DETAIL_PREVIEW_LIMIT_OPTIONS as readonly number[]).includes(saved) ? (saved as DetailPreviewLimit) : 50
+}
+
+const detailPreviewLimit = ref<DetailPreviewLimit>(loadDetailPreviewLimit())
 const detailPreviewOffset = ref(0)
 const detailTotalCount = ref<number | null>(null)
 const detailCompareSnapshot = ref<PreviewResult | null>(null)
@@ -178,11 +186,11 @@ const aiPlaceholder = computed(() => {
   return "请在左侧勾选数据表，或开启“智能关联元数据”直接提问..."
 })
 
-const createTab = (initialSql?: string) => {
+const createTab = (initialSql?: string, tabName?: string) => {
   const id = Math.random().toString(36).substring(7)
   const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
   tabs.value.push({
-    id, name: `查询 ${tabs.value.length + 1}`, sql: initialSql ? formatLabSqlSafe(initialSql, source?.source_type || 'mysql') : '',
+    id, name: tabName?.trim() || `查询 ${tabs.value.length + 1}`, sql: initialSql ? formatLabSqlSafe(initialSql, source?.source_type || 'mysql') : '',
     testParams: { user_pattern: '%' }, result: null, error: null, executing: false, activeSubTab: 'result',
     aiContent: '', optimizedSql: '', aiDetectedParams: [], columnLabels: {}, emptyTestPassed: false,
     recalledContext: [], compareSnapshot: null, lastAiPrompt: undefined, aiFeedbackRating: null,
@@ -307,6 +315,28 @@ const suggestions = ref<{title: string, description: string, sql: string}[]>([])
 const loadingSuggestions = ref(false)
 const aiContextTable = ref<string | null>(null)
 const selectedSuggestionIdx = ref(0)
+const cachedSuggestionKey = ref('')
+
+const buildSuggestionCacheKey = (
+  sourceId: number,
+  tables: string[] | null,
+  contextTable: string | null,
+  mode: string,
+) => {
+  const tablesKey = tables?.length ? [...tables].sort().join('\0') : ''
+  return `${sourceId}|${mode}|${contextTable ?? ''}|${tablesKey}`
+}
+
+const hasCachedGlobalSuggestions = computed(() => {
+  if (!selectedSourceId.value || suggestions.value.length === 0) return false
+  const globalKey = buildSuggestionCacheKey(
+    selectedSourceId.value,
+    selectedTables.value.length > 0 ? selectedTables.value : null,
+    null,
+    labMode.value,
+  )
+  return cachedSuggestionKey.value === globalKey
+})
 const queryHistory = ref<{sql: string, params: any, timestamp: number, execution_time_ms?: number, row_count?: number, success?: boolean}[]>([])
 
 const selectedSuggestion = computed(() => suggestions.value[selectedSuggestionIdx.value] ?? null)
@@ -321,10 +351,19 @@ watch(showSuggestionModal, (open) => {
   if (open) selectedSuggestionIdx.value = 0
 })
 
-const adoptSuggestion = (sql: string) => {
-  createTab(sql)
+const adoptSuggestion = (sql: string, title?: string) => {
+  createTab(sql, title)
   showSuggestionModal.value = false
   showToast('已采用推荐查询', 'success')
+}
+
+const adoptAllSuggestions = () => {
+  if (!suggestions.value.length) return
+  suggestions.value.forEach((item, idx) => {
+    createTab(item.sql, item.title || `推荐 ${idx + 1}`)
+  })
+  showSuggestionModal.value = false
+  showToast(`已采用全部 ${suggestions.value.length} 个推荐查询`, 'success')
 }
 
 const copySuggestionSql = async (sql: string) => {
@@ -740,6 +779,9 @@ watch(selectedSourceId, () => {
   columnsCache.value = {}
   tableProfilesMap.value = {}
   tableFavorites.value = {}
+  suggestions.value = []
+  cachedSuggestionKey.value = ''
+  aiContextTable.value = null
   loadRecentExplorerTables()
   fetchAvailableTables()
   fetchTableFavorites()
@@ -1316,12 +1358,24 @@ const applyAiFix = () => {
   }
 }
 
-const openSuggestionModal = async () => {
+const openSuggestionModal = async (force = false) => {
   if (!selectedSourceId.value) return showToast('请先选择数据源', 'warning')
   if (isAiProcessing.value) return
 
-  aiTaskType.value = 'suggest-global'
+  const cacheKey = buildSuggestionCacheKey(
+    selectedSourceId.value,
+    selectedTables.value.length > 0 ? selectedTables.value : null,
+    null,
+    labMode.value,
+  )
   aiContextTable.value = null
+
+  if (!force && suggestions.value.length > 0 && cachedSuggestionKey.value === cacheKey) {
+    showSuggestionModal.value = true
+    return
+  }
+
+  aiTaskType.value = 'suggest-global'
   loadingSuggestions.value = true
   currentAbortController.value = new AbortController()
   
@@ -1341,6 +1395,7 @@ const openSuggestionModal = async () => {
       signal: currentAbortController.value.signal
     })
     suggestions.value = res.data || []
+    cachedSuggestionKey.value = cacheKey
     addAiLog(`推荐成功，已发现 ${suggestions.value.length} 个潜在业务查询场景`, "success")
     
     // 只有在获取成功后才显示弹窗
@@ -1359,12 +1414,19 @@ const openSuggestionModal = async () => {
   }
 }
 
-const openTableAiSuggestion = async (table: string) => {
+const openTableAiSuggestion = async (table: string, force = false) => {
   if (!selectedSourceId.value) return
   if (!hasPerm('element:lab:generate')) return showToast('暂无智能推荐权限', 'error')
   if (isAiProcessing.value) return
 
+  const cacheKey = buildSuggestionCacheKey(selectedSourceId.value, [table], table, labMode.value)
   aiContextTable.value = table
+
+  if (!force && suggestions.value.length > 0 && cachedSuggestionKey.value === cacheKey) {
+    showSuggestionModal.value = true
+    return
+  }
+
   aiTaskType.value = 'suggest-table'
   loadingSuggestions.value = true
   currentAbortController.value = new AbortController()
@@ -1382,6 +1444,7 @@ const openTableAiSuggestion = async (table: string) => {
     })
     
     suggestions.value = res.data || []
+    cachedSuggestionKey.value = cacheKey
     
     if (suggestions.value.length > 0) {
       addAiLog(`推荐成功，已发现 ${suggestions.value.length} 个关于表 [${table}] 的潜在查询场景`, "success")
@@ -1397,6 +1460,14 @@ const openTableAiSuggestion = async (table: string) => {
   } finally { 
     loadingSuggestions.value = false 
     currentAbortController.value = null
+  }
+}
+
+const regenerateSuggestions = () => {
+  if (aiContextTable.value) {
+    openTableAiSuggestion(aiContextTable.value, true)
+  } else {
+    openSuggestionModal(true)
   }
 }
 
@@ -1508,6 +1579,16 @@ const fetchTablePreview = async (force = false) => {
 const handleDetailPageChange = (offset: number) => {
   detailPreviewOffset.value = offset
   fetchTablePreview(true)
+}
+
+const onDetailPreviewLimitChange = (value: number) => {
+  if (!(DETAIL_PREVIEW_LIMIT_OPTIONS as readonly number[]).includes(value)) return
+  detailPreviewLimit.value = value as DetailPreviewLimit
+  localStorage.setItem('sqllab_detail_preview_limit', String(value))
+  detailPreviewOffset.value = 0
+  if (detailTable.value && showTableDetailModal.value) {
+    fetchTablePreview(true)
+  }
 }
 
 const clearDetailPreview = () => {
@@ -1984,10 +2065,10 @@ onMounted(() => {
           </div>
         </div>
 
-        <Tooltip v-if="labMode !== 'api' && hasPerm('element:lab:generate')" text="智能推荐 12 个查询场景" position="top" align="end">
+        <Tooltip v-if="labMode !== 'api' && hasPerm('element:lab:generate')" :text="hasCachedGlobalSuggestions ? `查看推荐结果（${suggestions.length} 个场景）` : '智能推荐查询场景'" position="top" align="end">
           <button
             :disabled="isAiProcessing"
-            @click="openSuggestionModal"
+            @click="openSuggestionModal()"
             class="shrink-0 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <SparklesIcon class="w-4 h-4" />
@@ -2413,28 +2494,45 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <!-- Footer actions -->
-            <div class="shrink-0 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between gap-3">
-              <p class="text-[11px] text-gray-400 hidden sm:block">采用后将新建查询标签页并填入 SQL</p>
-              <div class="flex items-center gap-2 ml-auto">
-                <button
-                  type="button"
-                  class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                  @click="showSuggestionModal = false"
-                >
-                  关闭
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
-                  @click="adoptSuggestion(selectedSuggestion.sql)"
-                >
-                  <PlayIcon class="w-4 h-4" />
-                  采用此查询
-                </button>
-              </div>
-            </div>
+        <!-- Footer actions (full modal width) -->
+        <div v-if="suggestions.length" class="shrink-0 px-6 py-3 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p class="text-[11px] text-gray-400 leading-relaxed shrink-0">采用后将新建查询标签页；「全部应用」会为每个场景各建一个 Tab</p>
+          <div class="flex items-center justify-end gap-2 flex-nowrap shrink-0">
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors disabled:opacity-40"
+              :disabled="suggestions.length === 0"
+              @click="adoptAllSuggestions"
+            >
+              全部应用 ({{ suggestions.length }})
+            </button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-3 py-2 text-sm text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-40"
+              :disabled="loadingSuggestions"
+              @click="regenerateSuggestions"
+            >
+              重新生成
+            </button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              @click="showSuggestionModal = false"
+            >
+              关闭
+            </button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-40"
+              :disabled="!selectedSuggestion"
+              @click="selectedSuggestion && adoptSuggestion(selectedSuggestion.sql, selectedSuggestion.title)"
+            >
+              <PlayIcon class="w-4 h-4" />
+              采用此查询
+            </button>
           </div>
         </div>
       </div>
@@ -2473,7 +2571,18 @@ onMounted(() => {
               <div v-if="detailPreviewLoading" class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
             </button>
           </div>
-          <div v-if="detailActiveTab === 'preview' && detailPreviewData" class="flex items-center gap-2 shrink-0 py-2">
+          <div v-if="detailActiveTab === 'preview'" class="flex items-center gap-2 shrink-0 py-2">
+            <Tooltip text="每页预览行数" position="bottom" align="end">
+              <select
+                :value="detailPreviewLimit"
+                :disabled="detailPreviewLoading"
+                class="h-8 px-2 text-xs border border-gray-200 rounded-md bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 disabled:opacity-50"
+                @change="onDetailPreviewLimitChange(Number(($event.target as HTMLSelectElement).value))"
+              >
+                <option v-for="n in DETAIL_PREVIEW_LIMIT_OPTIONS" :key="n" :value="n">{{ n }} 行/页</option>
+              </select>
+            </Tooltip>
+            <template v-if="detailPreviewData">
             <Tooltip text="将当前结果设为对比基准" position="bottom" align="end">
               <button @click="pinDetailBaseline" class="flex items-center px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-bold border border-violet-100 hover:bg-violet-100">
                 {{ detailCompareSnapshot ? '清除基准' : '固定基准' }}
@@ -2507,6 +2616,7 @@ onMounted(() => {
                 异步导出
               </button>
             </Tooltip>
+            </template>
           </div>
         </div>
 

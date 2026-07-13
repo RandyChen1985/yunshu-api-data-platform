@@ -212,6 +212,50 @@ class LabEnhancementService:
                 return [{"name": r["name"], "count": int(r["count"] or 0)} for r in rows]
 
     @staticmethod
+    def _build_table_search_order(
+        sort_by: str,
+        sort_order: str,
+        q_clean: str,
+        scope: str,
+    ) -> tuple[str, List[Any]]:
+        """构建表探索器 ORDER BY 子句"""
+        sort_by = (sort_by or "default").lower()
+        sort_order = (sort_order or "desc").lower()
+        if sort_order not in ("asc", "desc"):
+            sort_order = "desc"
+
+        pin_prefix = "f.is_pinned DESC, " if scope == "favorites" else ""
+        relevance_order = """
+                (CASE
+                  WHEN p.table_name = %s THEN 0
+                  WHEN p.table_name LIKE %s THEN 1
+                  WHEN p.ai_term LIKE %s THEN 2
+                  WHEN JSON_SEARCH(p.ai_tags, 'one', %s, NULL, '$[*]') IS NOT NULL THEN 3
+                  WHEN p.ai_description LIKE %s THEN 4
+                  WHEN f.note LIKE %s THEN 5
+                  ELSE 6
+                END) ASC,
+                p.confidence_score DESC,
+                p.table_name ASC
+            """
+
+        if sort_by in ("default", "relevance") and q_clean:
+            exact = q_clean
+            prefix = f"{q_clean}%"
+            like = f"%{q_clean}%"
+            return pin_prefix + relevance_order, [exact, prefix, like, like, like, like]
+
+        direction = "ASC" if sort_order == "asc" else "DESC"
+        if sort_by == "name":
+            return f"{pin_prefix}p.table_name {direction}", []
+        if sort_by == "term":
+            return f"{pin_prefix}p.ai_term {direction}, p.table_name ASC", []
+        if sort_by == "confidence":
+            return f"{pin_prefix}p.confidence_score {direction}, p.table_name ASC", []
+
+        return f"{pin_prefix}p.confidence_score DESC, p.table_name ASC", []
+
+    @staticmethod
     async def search_tables(
         user_id: int,
         source_id: int,
@@ -222,6 +266,8 @@ class LabEnhancementService:
         page: int = 1,
         page_size: int = 40,
         include_ignored: bool = False,
+        sort_by: str = "default",
+        sort_order: str = "desc",
     ) -> Dict[str, Any]:
         """关键词搜索表画像（分页），支持收藏/最近/标签筛选"""
         page_size = min(max(int(page_size), 1), 100)
@@ -272,27 +318,9 @@ class LabEnhancementService:
 
         where_extra = (" AND " + " AND ".join(conditions)) if conditions else ""
 
-        if q_clean:
-            exact = q_clean
-            prefix = f"{q_clean}%"
-            like = f"%{q_clean}%"
-            order_sql = """
-                (CASE
-                  WHEN p.table_name = %s THEN 0
-                  WHEN p.table_name LIKE %s THEN 1
-                  WHEN p.ai_term LIKE %s THEN 2
-                  WHEN JSON_SEARCH(p.ai_tags, 'one', %s, NULL, '$[*]') IS NOT NULL THEN 3
-                  WHEN p.ai_description LIKE %s THEN 4
-                  WHEN f.note LIKE %s THEN 5
-                  ELSE 6
-                END) ASC,
-                p.confidence_score DESC,
-                p.table_name ASC
-            """
-            order_params = [exact, prefix, like, like, like, like]
-        else:
-            order_sql = "p.confidence_score DESC, p.table_name ASC"
-            order_params = []
+        order_sql, order_params = LabEnhancementService._build_table_search_order(
+            sort_by, sort_order, q_clean, scope,
+        )
 
         count_sql = f"SELECT COUNT(*) AS cnt {join_clause}{where_extra}"
         list_sql = f"""
