@@ -372,6 +372,19 @@ async def list_datasource_table_profile_tags(
     return await LabEnhancementService.aggregate_table_tags(source_id)
 
 
+@router.get("/datasources/{source_id}/table-profiles/related")
+async def get_datasource_table_related(
+    source_id: int,
+    table: str = Query(..., description="源表物理名"),
+    limit: int = Query(15, ge=1, le=30),
+    user: dict = Depends(require_api_key),
+):
+    """数据源画像浏览：基于摸排推荐关联表"""
+    from app.services.lab_enhancement_service import LabEnhancementService
+
+    return await LabEnhancementService.get_related_tables(source_id, table, limit)
+
+
 @router.put("/datasources/{source_id}/table-profiles/ignore")
 async def toggle_table_profile_ignore(
     source_id: int,

@@ -107,6 +107,15 @@ const tagsLoading = ref(false)
 const previewTable = ref<string | null>(null)
 const previewDetail = ref<any>(null)
 const previewLoading = ref(false)
+const relatedTables = ref<{
+  table_name: string
+  ai_term?: string | null
+  confidence: number
+  reason: string
+  join_hint?: string | null
+}[]>([])
+const relatedLoading = ref(false)
+const relatedMessage = ref<string | null>(null)
 const expandedDataTable = ref<string | null>(null)
 const dataPreviewLoading = ref(false)
 const dataPreviewError = ref('')
@@ -145,6 +154,12 @@ const tagsUrl = computed(() =>
   isBrowse.value && props.sourceId
     ? `/api/portal/datasource/datasources/${props.sourceId}/table-profiles/tags`
     : '/api/portal/lab/table-tags',
+)
+
+const relatedTablesUrl = computed(() =>
+  isBrowse.value && props.sourceId
+    ? `/api/portal/datasource/datasources/${props.sourceId}/table-profiles/related`
+    : '/api/portal/lab/table-related',
 )
 
 const listIndentClass = computed(() => (isBrowse.value ? 'ml-4' : 'ml-9'))
@@ -211,10 +226,16 @@ const fetchResults = async () => {
     }
     if (previewTable.value && !items.value.some(i => i.table_name === previewTable.value)) {
       previewTable.value = items.value[0]?.table_name || null
-      if (previewTable.value) loadPreviewDetail(previewTable.value)
+      if (previewTable.value) {
+        loadPreviewDetail(previewTable.value)
+        loadRelatedTables(previewTable.value)
+      }
     } else if (!previewTable.value && items.value.length) {
       previewTable.value = items.value[0]?.table_name ?? null
-      if (previewTable.value) loadPreviewDetail(previewTable.value)
+      if (previewTable.value) {
+        loadPreviewDetail(previewTable.value)
+        loadRelatedTables(previewTable.value)
+      }
     }
   } catch {
     showToast('搜索表失败', 'error')
@@ -273,9 +294,61 @@ const loadPreviewDetail = async (tableName: string) => {
   }
 }
 
+const loadRelatedTables = async (tableName: string) => {
+  if (!props.sourceId || !tableName) return
+  relatedLoading.value = true
+  relatedTables.value = []
+  relatedMessage.value = null
+  try {
+    const url = relatedTablesUrl.value
+    const params = isBrowse.value
+      ? { table: tableName, limit: 15 }
+      : { source_id: props.sourceId, table: tableName, limit: 15 }
+    const res = await axios.get(url, { params })
+    relatedTables.value = res.data?.items || []
+    relatedMessage.value = res.data?.message || null
+  } catch {
+    relatedTables.value = []
+    relatedMessage.value = '加载关联推荐失败'
+  } finally {
+    relatedLoading.value = false
+  }
+}
+
 const onRowClick = (item: ExplorerTableItem) => {
   previewTable.value = item.table_name
   loadPreviewDetail(item.table_name)
+  loadRelatedTables(item.table_name)
+}
+
+const addRelatedToDraft = (tableName: string) => {
+  if (isBrowse.value || isInDraft(tableName)) return
+  draftSelected.value = [...draftSelected.value, tableName]
+  showToast(`已加入已选：${tableName}`, 'success')
+}
+
+const addAllRelatedToDraft = () => {
+  if (isBrowse.value) return
+  const toAdd = relatedTables.value
+    .map(r => r.table_name)
+    .filter(t => !isInDraft(t))
+  if (!toAdd.length) {
+    showToast('关联表均已在已选列表中', 'info')
+    return
+  }
+  draftSelected.value = [...draftSelected.value, ...toAdd]
+  showToast(`已加入 ${toAdd.length} 张关联表`, 'success')
+}
+
+const focusRelatedTable = (tableName: string) => {
+  const item = items.value.find(i => i.table_name === tableName)
+  if (item) {
+    onRowClick(item)
+    return
+  }
+  previewTable.value = tableName
+  loadPreviewDetail(tableName)
+  loadRelatedTables(tableName)
 }
 
 const colName = (col: string | { name: string }) => (typeof col === 'string' ? col : col.name)
@@ -610,6 +683,57 @@ watch(page, fetchResults)
                 <span v-for="tg in previewItem.ai_tags" :key="tg" class="text-[9px] px-1.5 py-0.5 bg-white border rounded-full text-gray-600">{{ tg }}</span>
               </div>
             </template>
+
+            <!-- Related tables -->
+            <div class="mt-2 border border-indigo-100 rounded-lg bg-indigo-50/50 overflow-hidden">
+              <div class="px-2.5 py-1.5 border-b border-indigo-100/80 flex items-center justify-between gap-2">
+                <span class="text-[10px] font-bold text-indigo-800">可能关联的表</span>
+                <button
+                  v-if="!isBrowse && relatedTables.length"
+                  type="button"
+                  class="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 px-1.5 py-0.5 rounded hover:bg-indigo-100"
+                  @click="addAllRelatedToDraft"
+                >全部加入</button>
+              </div>
+              <div v-if="relatedLoading" class="px-2.5 py-3 text-[10px] text-gray-400 italic">分析关联中...</div>
+              <div v-else-if="!relatedTables.length" class="px-2.5 py-2 text-[10px] text-gray-500 leading-relaxed">
+                {{ relatedMessage || '暂无推荐，请确认该表已完成摸排' }}
+              </div>
+              <ul v-else class="max-h-36 overflow-y-auto custom-scrollbar divide-y divide-indigo-100/60">
+                <li
+                  v-for="rel in relatedTables"
+                  :key="rel.table_name"
+                  class="px-2.5 py-2 hover:bg-white/70 transition-colors"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      class="min-w-0 flex-1 text-left"
+                      @click="focusRelatedTable(rel.table_name)"
+                    >
+                      <div class="font-mono text-[10px] font-bold text-gray-800 truncate" :title="rel.table_name">{{ rel.table_name }}</div>
+                      <div v-if="rel.ai_term" class="text-[9px] text-indigo-600 truncate">{{ rel.ai_term }}</div>
+                      <div class="text-[9px] text-gray-500 mt-0.5 line-clamp-2" :title="rel.reason">{{ rel.reason }}</div>
+                    </button>
+                    <div class="shrink-0 flex flex-col items-end gap-1">
+                      <span class="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded">{{ Math.round(rel.confidence * 100) }}%</span>
+                      <button
+                        v-if="!isBrowse"
+                        type="button"
+                        class="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors"
+                        :class="isInDraft(rel.table_name)
+                          ? 'text-gray-400 border-gray-200 cursor-default'
+                          : 'text-indigo-600 border-indigo-200 hover:bg-indigo-100'"
+                        :disabled="isInDraft(rel.table_name)"
+                        @click.stop="addRelatedToDraft(rel.table_name)"
+                      >{{ isInDraft(rel.table_name) ? '已选' : '加入' }}</button>
+                    </div>
+                  </div>
+                  <div v-if="rel.join_hint" class="mt-1 text-[8px] font-mono text-gray-400 truncate" :title="rel.join_hint">{{ rel.join_hint }}</div>
+                </li>
+              </ul>
+            </div>
+
             <div v-if="previewLoading" class="text-[11px] text-gray-400 italic">加载字段...</div>
             <div v-else-if="previewDetail?.columns_profile?.length" class="mt-2">
               <div class="text-[10px] font-bold text-gray-400 mb-1">字段画像 ({{ previewDetail.columns_profile.length }})</div>

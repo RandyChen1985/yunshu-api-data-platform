@@ -931,6 +931,17 @@ async def get_join_paths(
     return paths
 
 
+@router.get("/table-related")
+async def get_table_related(
+    source_id: int,
+    table: str = Query(..., description="源表物理名"),
+    limit: int = Query(15, ge=1, le=30),
+    user=Depends(require_permission("element:lab:generate")),
+):
+    """表探索器：基于摸排画像推荐可能关联的表"""
+    return await LabEnhancementService.get_related_tables(source_id, table, limit)
+
+
 @router.get("/analysis-sessions")
 async def list_analysis_sessions(user=Depends(require_permission("element:lab:analysis"))):
     return await LabEnhancementService.list_analysis_sessions(int(user["user_id"]))

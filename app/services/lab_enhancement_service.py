@@ -812,6 +812,252 @@ class LabEnhancementService:
                         break
         return sorted(paths, key=lambda p: -p["confidence"])
 
+    # ---------- Related Table Recommendation (profile-based) ----------
+
+    @staticmethod
+    def _parse_profile_json_field(value: Any, default: Any) -> Any:
+        if value is None:
+            return default
+        if isinstance(value, (list, dict)):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return default
+        return default
+
+    @staticmethod
+    def _profile_column_names(columns_profile: Any) -> List[str]:
+        cols = LabEnhancementService._parse_profile_json_field(columns_profile, [])
+        names: List[str] = []
+        for col in cols:
+            if isinstance(col, dict):
+                name = col.get("name") or col.get("column_name")
+                if name:
+                    names.append(str(name))
+        return names
+
+    @staticmethod
+    def _is_profile_link_column(col_name: str, col_term: str = "") -> bool:
+        cn = (col_name or "").lower().strip()
+        if not cn or cn == "id":
+            return False
+        if cn.endswith("_id") or (cn.endswith("id") and len(cn) > 3):
+            return True
+        if cn.endswith("_no") or (cn.endswith("no") and len(cn) > 4):
+            return True
+        if cn.endswith("_code"):
+            return True
+        term = col_term or ""
+        return any(k in term for k in ("ID", "Id", "编号", "主键"))
+
+    @staticmethod
+    def _link_hints_from_column(col_name: str) -> List[str]:
+        cn = (col_name or "").lower().strip()
+        hints: List[str] = []
+        if cn.endswith("_id"):
+            hints.append(cn[:-3])
+        elif cn.endswith("id") and len(cn) > 3:
+            hints.append(cn[:-2])
+        elif cn.endswith("_no"):
+            hints.append(cn[:-3])
+        elif cn.endswith("_code"):
+            hints.append(cn[:-5])
+        else:
+            hints.append(cn)
+        for part in re.split(r"[_]+", cn):
+            if len(part) >= 3 and part not in ("id", "no", "code", "num", "key"):
+                hints.append(part)
+        out: List[str] = []
+        seen: set[str] = set()
+        for h in hints:
+            h = h.strip()
+            if len(h) >= 2 and h not in seen:
+                seen.add(h)
+                out.append(h)
+        return out
+
+    @staticmethod
+    def _table_name_tokens(table_name: str) -> set[str]:
+        base = (table_name or "").split(".")[-1].lower()
+        return {p for p in re.split(r"[_]+", base) if len(p) >= 2}
+
+    @staticmethod
+    def _table_name_prefix(table_name: str, parts: int = 2) -> str:
+        segs = (table_name or "").split(".")[-1].upper().split("_")
+        segs = [s for s in segs if s]
+        if not segs:
+            return ""
+        return "_".join(segs[:parts]) if len(segs) >= parts else segs[0]
+
+    @staticmethod
+    def _guess_join_hint(source_table: str, target_table: str, link_col: str, target_cols: List[str]) -> str:
+        target_col_set = {c.lower() for c in target_cols}
+        lc = link_col
+        candidates = [lc, "ID", f"{target_table.split('.')[-1]}_ID", f"{target_table.split('.')[-1]}_id", "id"]
+        tgt_field = next((c for c in candidates if c.lower() in target_col_set), "ID")
+        actual_tgt = next((c for c in target_cols if c.lower() == tgt_field.lower()), tgt_field)
+        return f"LEFT JOIN {target_table} ON {source_table}.{lc} = {target_table}.{actual_tgt}"
+
+    @staticmethod
+    async def get_related_tables(
+        source_id: int,
+        table_name: str,
+        limit: int = 15,
+    ) -> Dict[str, Any]:
+        """基于摸排画像推断可能关联的表（不依赖 meta_relationships）"""
+        limit = min(max(int(limit), 1), 30)
+        table_name = (table_name or "").strip()
+        if not table_name:
+            return {"source_table": "", "items": [], "message": "未指定表名"}
+
+        async with get_db_connection() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT table_name, ai_term, ai_description, ai_tags, columns_profile,
+                           status, confidence_score, is_temporary, is_ignored
+                    FROM db_table_profiles
+                    WHERE connection_id = %s AND status = 2 AND is_ignored = 0
+                    """,
+                    (source_id,),
+                )
+                rows = await cursor.fetchall()
+
+        profiles: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            tname = row.get("table_name")
+            if not tname:
+                continue
+            profiles[tname] = {
+                "table_name": tname,
+                "ai_term": row.get("ai_term"),
+                "ai_description": row.get("ai_description"),
+                "ai_tags": LabEnhancementService._parse_profile_json_field(row.get("ai_tags"), []),
+                "columns_profile": LabEnhancementService._parse_profile_json_field(row.get("columns_profile"), []),
+                "confidence_score": row.get("confidence_score"),
+                "is_temporary": bool(row.get("is_temporary")),
+            }
+
+        source = profiles.get(table_name)
+        if not source:
+            return {
+                "source_table": table_name,
+                "items": [],
+                "message": "该表尚未完成摸排或已被忽略，无法推荐关联表",
+            }
+
+        source_tags = set(source.get("ai_tags") or [])
+        source_prefix = LabEnhancementService._table_name_prefix(table_name)
+
+        scores: Dict[str, Dict[str, Any]] = {}
+
+        def bump(target: str, amount: float, reason: str, match_type: str, join_hint: Optional[str] = None) -> None:
+            if target == table_name or target not in profiles:
+                return
+            entry = scores.setdefault(
+                target,
+                {"score": 0.0, "reasons": [], "match_types": set(), "join_hint": None},
+            )
+            entry["score"] += amount
+            if reason and reason not in entry["reasons"]:
+                entry["reasons"].append(reason)
+            entry["match_types"].add(match_type)
+            if join_hint and not entry["join_hint"]:
+                entry["join_hint"] = join_hint
+
+        # 1) 字段名 → 目标表
+        for col in source.get("columns_profile") or []:
+            if not isinstance(col, dict):
+                continue
+            col_name = str(col.get("name") or col.get("column_name") or "")
+            col_term = str(col.get("term") or "")
+            if not LabEnhancementService._is_profile_link_column(col_name, col_term):
+                continue
+            hints = LabEnhancementService._link_hints_from_column(col_name)
+            for other_name, other in profiles.items():
+                if other_name == table_name:
+                    continue
+                if other.get("is_temporary"):
+                    continue
+                other_lower = other_name.lower()
+                other_tokens = LabEnhancementService._table_name_tokens(other_name)
+                other_cols = LabEnhancementService._profile_column_names(other.get("columns_profile"))
+                other_col_set = {c.lower() for c in other_cols}
+                matched_hint = None
+                for hint in hints:
+                    if hint in other_lower or hint in other_tokens:
+                        matched_hint = hint
+                        break
+                if not matched_hint:
+                    continue
+                has_pk = bool(other_col_set & {"id", matched_hint, f"{matched_hint}_id", col_name.lower()})
+                score = 0.55 if has_pk else 0.4
+                join_hint = LabEnhancementService._guess_join_hint(table_name, other_name, col_name, other_cols)
+                bump(
+                    other_name,
+                    score,
+                    f"字段 {col_name} 与表 {other_name} 名称/主键推断相关",
+                    "column",
+                    join_hint,
+                )
+
+        # 2) 标签交集
+        for other_name, other in profiles.items():
+            if other_name == table_name or other.get("is_temporary"):
+                continue
+            other_tags = set(other.get("ai_tags") or [])
+            overlap = source_tags & other_tags
+            if overlap:
+                tag_str = "、".join(sorted(overlap)[:3])
+                bump(
+                    other_name,
+                    0.12 + 0.06 * min(len(overlap), 4),
+                    f"共享标签「{tag_str}」",
+                    "tag",
+                )
+
+        # 3) 表名前缀（同业务模块）
+        if source_prefix:
+            for other_name, other in profiles.items():
+                if other_name == table_name or other.get("is_temporary"):
+                    continue
+                if LabEnhancementService._table_name_prefix(other_name) == source_prefix:
+                    bump(other_name, 0.2, f"同模块前缀 {source_prefix}", "prefix")
+
+        # 4) 目标表字段引用源表名（反向）
+        source_token = table_name.split(".")[-1].lower()
+        for other_name, other in profiles.items():
+            if other_name == table_name or other.get("is_temporary"):
+                continue
+            for oc in LabEnhancementService._profile_column_names(other.get("columns_profile")):
+                ol = oc.lower()
+                if source_token in ol or any(h in ol for h in LabEnhancementService._link_hints_from_column(source_token)):
+                    bump(other_name, 0.25, f"表 {other_name} 含关联字段 {oc}", "column")
+                    break
+
+        ranked = sorted(scores.items(), key=lambda x: -x[1]["score"])
+        items: List[Dict[str, Any]] = []
+        for other_name, meta in ranked[:limit]:
+            other = profiles[other_name]
+            conf = min(0.95, max(0.35, round(meta["score"], 2)))
+            items.append({
+                "table_name": other_name,
+                "ai_term": other.get("ai_term"),
+                "confidence": conf,
+                "reason": "；".join(meta["reasons"][:2]),
+                "join_hint": meta.get("join_hint"),
+                "match_types": sorted(meta["match_types"]),
+                "confidence_score": other.get("confidence_score"),
+            })
+
+        return {
+            "source_table": table_name,
+            "items": items,
+            "message": None if items else "未发现明显关联表，可尝试搜索或按标签筛选",
+        }
+
     # ---------- Publish Health Check ----------
 
     @staticmethod
