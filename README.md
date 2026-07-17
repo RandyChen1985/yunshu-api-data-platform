@@ -1,9 +1,9 @@
 > **项目声明**  
 > 本项目为**个人开源**，供自由学习交流，遵循 [MIT](LICENSE) 开源协议，可自由分发。  
-> 原项目名称「云枢」与其他企业项目重名，为避免混淆，现更名为「南孜」。  
-> 「南孜」来自我一直使用的网名，取「孜孜不倦」之意，寓意 AI 持续学习与进化。
+> 原项目名称「云枢」与其他企业项目重名，为避免混淆，现更名为「NanZi」。  
+> 「NanZi」来自我一直使用的网名（南孜），取「孜孜不倦」之意，寓意 AI 持续学习与进化。
 
-# 南孜 · 数据服务平台 (NanZi API Data Platform)
+# NanZi · 数据服务平台 (NanZi API Data Platform)
 
 **简体中文** | [English](README_EN.md)
 
@@ -12,9 +12,9 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg?logo=vue.js&logoColor=white)](https://vuejs.org/) [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![ClickHouse](https://img.shields.io/badge/ClickHouse-Ready-FFCC00.svg?logo=clickhouse&logoColor=black)](https://clickhouse.com/) [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql&logoColor=white)](https://www.mysql.com/) [![Redis](https://img.shields.io/badge/Redis-Active-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-![南孜 · 数据服务平台概览](docs/images/overview.png)
+![NanZi · 数据服务平台概览](docs/images/overview.png)
 
-**南孜 · 数据服务平台**是面向企业数据消费场景的一站式 **Data-as-a-Service (DaaS)** 中枢。它将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，为 AI Agent、运营控制台与业务系统提供标准化数据访问能力。
+**NanZi · 数据服务平台**是面向企业数据消费场景的一站式 **Data-as-a-Service (DaaS)** 中枢。它将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，为 AI Agent、运营控制台与业务系统提供标准化数据访问能力。
 
 平台核心聚焦于以下能力矩阵：
 
@@ -24,13 +24,13 @@
 *   📦 **数据产品目录 (Data Product Catalog)**：API 资源产品化发布、业务域浏览、权限申请/审批、资产全景 KPI 与调用量洞察。
 *   🛡️ **企业级安全审计**：按天分表审计日志、AST 静态 SQL 护栏、API Key + Session 双认证、数据脱敏策略。
 *   📊 **全链路可观测性**：24h/7d 调用趋势、Top 排行、分钟级统计聚合、连接池健康监控。
-*   🔌 **开放集成**：标准化 `/api/v1` 对外接口与管理后台 Portal API，可作为上游 **南孜 · 智能体平台** 的数据底座。
+*   🔌 **开放集成**：标准化 `/api/v1` 对外接口与管理后台 Portal API，可作为上游 **NanZi · 智能体平台** 的数据底座。
 
 ---
 
 ## 🏛️ 系统架构 (Architecture)
 
-![南孜 · 数据服务平台技术架构](docs/images/architech.png)
+![NanZi · 数据服务平台技术架构](docs/images/architech.png)
 
 ---
 
@@ -50,7 +50,7 @@
 
 ## 🌟 核心能力 (Core Capabilities)
 
-![南孜 · 数据服务平台核心能力](docs/images/features.png)
+![NanZi · 数据服务平台核心能力](docs/images/features.png)
 
 ### 1. 🚀 动态资源服务化 (Resource-as-an-API)
 
@@ -251,9 +251,9 @@ cd frontend && npm run dev
 
 ---
 
-## 🔗 与南孜生态的关系
+## 🔗 与 NanZi 生态的关系
 
-本平台是 **南孜 · 智维 · AI** 体系中的数据服务层，与 [南孜 · 智能体平台](https://github.com/RandyChen1985/nanzi-ai-agent-platform) 互补：
+本平台是 **NanZi · 智维 · AI** 体系中的数据服务层，与 [NanZi · 智能体平台](https://github.com/RandyChen1985/nanzi-ai-agent-platform) 互补：
 
 | 平台 | 定位 |
 |------|------|
