@@ -1,3 +1,8 @@
+> **Project Notice**  
+> This is a **personal open-source** project for free learning and exchange, released under the [MIT](LICENSE) License and free to redistribute.  
+> The original name “Yunshu” (云枢) conflicted with other enterprise projects, so it has been renamed to “NanZi” (南孜).  
+> “NanZi” comes from my long-used screen name, echoing the Chinese idiom **孜孜不倦** (diligent and tireless) — a nod to AI that keeps learning and evolving.
+
 # NanZi API Data Platform (南孜 · 数据服务平台)
 
 [简体中文](README.md) | **English**
