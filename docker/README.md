@@ -1,6 +1,6 @@
 # Docker 部署指南
 
-本目录包含了云枢数据服务平台 (Yunshu API Data Platform) 的容器化部署配置文件。
+本目录包含了南孜数据服务平台 (NanZi API Data Platform) 的容器化部署配置文件。
 
 ## 文件说明
 
@@ -14,8 +14,8 @@
 | `build_native.sh` | 按本机 CPU 架构构建，需传入版本号，适合本地 `docker run` 调试。 |
 | `install-buildx.sh` | 修复 Homebrew docker + Colima 下 buildx 不可用的问题。 |
 | `_build_common.sh` | 内部公共逻辑，请勿直接调用。 |
-| `start-yunshu-api-server.sh` | 一键启动脚本。自动检查配置并启动 API 容器。 |
-| `stop-yunshu-api-server.sh` | 一键停止脚本。停止并移除 API 容器。 |
+| `start-nanzi-api-server.sh` | 一键启动脚本。自动检查配置并启动 API 容器。 |
+| `stop-nanzi-api-server.sh` | 一键停止脚本。停止并移除 API 容器。 |
 | `.env` | 环境变量配置文件（需从 `../env.example` 复制并修改）。 |
 
 ## 快速开始
@@ -42,7 +42,7 @@ API_SERVICE_LOG_LEVEL=INFO              # 日志级别
 # 数据库连接 (使用宿主机 IP 而非 localhost)
 MYSQL_HOST=192.168.x.x                  # 宿主机 IP 地址
 MYSQL_PORT=3306
-MYSQL_DB=yunshu_api_data_platform
+MYSQL_DB=nanzi_api_data_platform
 MYSQL_USER=root
 MYSQL_PASSWORD=your_password
 
@@ -83,8 +83,8 @@ cd docker
 
 产物固定输出到 **`docker/release/`** 目录，文件名带版本号与架构后缀，例如：
 
-- `docker/release/yunshu-api_1.2.0_linux-amd64_20260628.tar`
-- `docker/release/yunshu-api_1.2.0_linux-arm64_20260628.tar`
+- `docker/release/nanzi-api_1.2.0_linux-amd64_20260628.tar`
+- `docker/release/nanzi-api_1.2.0_linux-arm64_20260628.tar`
 
 > **Mac 打 x86 包**：请用 `build_linux_x86.sh`（内部 `docker buildx --platform linux/amd64`），不要用 `build_native.sh`，否则 M 芯片会打出 arm64 镜像，无法在 x86 服务器运行。
 
@@ -101,8 +101,8 @@ cd docker
 **离线部署加载镜像**：
 
 ```bash
-docker load -i docker/release/yunshu-api_1.2.0_linux-amd64_YYYYMMDD.tar
-docker tag yunshu-api:1.2.0 yunshu-api:latest
+docker load -i docker/release/nanzi-api_1.2.0_linux-amd64_YYYYMMDD.tar
+docker tag nanzi-api:1.2.0 nanzi-api:latest
 ```
 
 构建过程包括：
@@ -116,7 +116,7 @@ docker tag yunshu-api:1.2.0 yunshu-api:latest
 
 ```bash
 # 在 docker 目录下执行
-./start-yunshu-api-server.sh
+./start-nanzi-api-server.sh
 ```
 
 启动脚本会自动：
@@ -154,13 +154,13 @@ docker-compose up -d
 
 ```bash
 # 查看容器状态
-docker ps | grep yunshu-api
+docker ps | grep nanzi-api
 
 # 查看启动日志
-docker logs yunshu-api
+docker logs nanzi-api
 
 # 实时查看日志
-docker logs -f yunshu-api
+docker logs -f nanzi-api
 ```
 
 正常启动后，日志应显示：
@@ -224,47 +224,47 @@ curl -X GET "http://localhost:8000/api/v1/query/real-metrics" \
 
 ```bash
 # 启动服务
-./start-yunshu-api-server.sh
+./start-nanzi-api-server.sh
 
 # 停止服务
-./stop-yunshu-api-server.sh
+./stop-nanzi-api-server.sh
 # 或
-docker stop yunshu-api
+docker stop nanzi-api
 
 # 重启服务
-docker restart yunshu-api
+docker restart nanzi-api
 
 # 删除容器
-docker rm -f yunshu-api
+docker rm -f nanzi-api
 
 # 查看容器状态
-docker ps -a | grep yunshu
+docker ps -a | grep nanzi
 ```
 
 ### 日志查看
 
 ```bash
 # 查看最近 100 行日志
-docker logs yunshu-api --tail 100
+docker logs nanzi-api --tail 100
 
 # 实时查看日志
-docker logs -f yunshu-api
+docker logs -f nanzi-api
 
 # 查看错误日志
-docker logs yunshu-api 2>&1 | grep -i error
+docker logs nanzi-api 2>&1 | grep -i error
 ```
 
 ### 进入容器调试
 
 ```bash
 # 进入容器 Shell
-docker exec -it yunshu-api bash
+docker exec -it nanzi-api bash
 
 # 查看环境变量
-docker exec yunshu-api env | grep MYSQL
+docker exec nanzi-api env | grep MYSQL
 
 # 测试数据库连接
-docker exec yunshu-api python -c "from app.core.database import engine; print(engine)"
+docker exec nanzi-api python -c "from app.core.database import engine; print(engine)"
 ```
 
 ## 故障排查
@@ -277,7 +277,7 @@ docker exec yunshu-api python -c "from app.core.database import engine; print(en
 1. 检查 `.env` 配置是否正确
 2. 确认数据库 Host 使用的是宿主机 IP 而非 localhost
 3. 检查数据库服务是否启动
-4. 查看详细日志：`docker logs yunshu-api`
+4. 查看详细日志：`docker logs nanzi-api`
 
 ### 问题 2: 无法访问管理后台
 
@@ -285,7 +285,7 @@ docker exec yunshu-api python -c "from app.core.database import engine; print(en
 
 **解决方法**:
 1. 检查 8000 端口是否被占用：`lsof -ti:8000`
-2. 检查容器状态：`docker ps | grep yunshu-api`
+2. 检查容器状态：`docker ps | grep nanzi-api`
 3. 查看容器日志确认启动状态
 
 ### 问题 3: API Key 认证失败

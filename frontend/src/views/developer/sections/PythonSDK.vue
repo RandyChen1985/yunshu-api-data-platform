@@ -14,7 +14,7 @@
 import time
 import logging
 
-class YunshuClient:
+class NanZiClient:
     def __init__(self, base_url, api_key):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
@@ -43,7 +43,7 @@ class YunshuClient:
 
 # 使用示例
 if __name__ == "__main__":
-    client = YunshuClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE")
+    client = NanZiClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE")
     result = client.get_rooms()
     if result["code"] == 200:
         for room in result["data"]["items"]:
@@ -61,7 +61,7 @@ const codeText = `import requests
 import time
 import logging
 
-class YunshuClient:
+class NanZiClient:
     def __init__(self, base_url, api_key):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
@@ -90,7 +90,7 @@ class YunshuClient:
 
 # 使用示例
 if __name__ == "__main__":
-    client = YunshuClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE")
+    client = NanZiClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE")
     result = client.get_rooms()
     if result["code"] == 200:
         for room in result["data"]["items"]:

@@ -1,7 +1,7 @@
-export const DEFAULT_PRODUCT_NAME = '云枢 · 数据服务平台'
-export const DEFAULT_LOGIN_SUBTITLE = 'Yunshu API Data Platform'
+export const DEFAULT_PRODUCT_NAME = '南孜 · 数据服务平台'
+export const DEFAULT_LOGIN_SUBTITLE = 'NanZi API Data Platform'
 export const DEFAULT_ICON_URL = '/favicon.png?v=20260629-2'
-export const DEFAULT_REPO_URL = 'https://github.com/RandyChen1985/yunshu-api-data-platform'
+export const DEFAULT_REPO_URL = 'https://github.com/RandyChen1985/nanzi-api-data-platform'
 
 export interface PublicBranding {
   enabled: boolean

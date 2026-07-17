@@ -1,11 +1,11 @@
 # Project Context
 
 ## Purpose
-**云枢・数据服务平台 (Yunshu Data API Platform)**
+**南孜・数据服务平台 (NanZi Data API Platform)**
 
-该项目（`yovole-yunshu-api-data-platform`）定位为**通用 Data API 平台**。
+该项目（`yovole-nanzi-api-data-platform`）定位为**通用 Data API 平台**。
 主要职责是对上屏蔽底层存储的差异，对下统一封装多种数据源（ClickHouse, HBase, MySQL），将大数据平台加工后的结果及各类在线库统一服务化为 REST/JSON API。
-它是所有上层应用（如云枢・运营控制台）和 AI 智能体平台（AI Agent Platform）的“取数中枢”，提供统一的认证鉴权、权限控制、查询编排与多数据源路由能力。
+它是所有上层应用（如南孜・运营控制台）和 AI 智能体平台（AI Agent Platform）的“取数中枢”，提供统一的认证鉴权、权限控制、查询编排与多数据源路由能力。
 
 ## Tech Stack
 - **Language**: Python 3.10+
@@ -53,8 +53,8 @@
 - **Safety**: No automatic commits unless explicitly requested.
 
 ## Domain Context
-- **Data Foundation**: The system consumes data from "Yunshu Data Foundation" (ClickHouse/HBase).
-- **Consumers**: Primary consumers are "Yunshu Ops Console" (Web UI) and "Yunshu AI Agent Platform".
+- **Data Foundation**: The system consumes data from "NanZi Data Foundation" (ClickHouse/HBase).
+- **Consumers**: Primary consumers are "NanZi Ops Console" (Web UI) and "NanZi AI Agent Platform".
 - **Concepts**:
     - **Region/Room**: Key dimensions for data resource permissioning.
     - **Unified Auth**: Centralized authentication and role-based access control.
@@ -68,5 +68,5 @@
 - **ClickHouse**: Primary OLAP storage.
 - **MySQL**: Business metadata storage.
 - **Redis**: Caching and session management.
-- **Yunshu AI Agent Platform**: (Downstream consumer)
-- **Yunshu Ops Console**: (Downstream consumer)
+- **NanZi AI Agent Platform**: (Downstream consumer)
+- **NanZi Ops Console**: (Downstream consumer)

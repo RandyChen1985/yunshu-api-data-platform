@@ -9,8 +9,8 @@
 | :--- | :--- | :--- |
 | `id` | `BIGINT` | 主键 |
 | `resource_key` | `VARCHAR(100)` | API 中使用的唯一键 (如 `yunshu_rooms`) |
-| `resource_name` | `VARCHAR(100)` | 可读名称 (如 `云枢机房`) |
-| `resource_group` | `VARCHAR(50)` | 分组名称 (如 `云枢 (Yunshu)`), 用于文档Tag和权限分类 |
+| `resource_name` | `VARCHAR(100)` | 可读名称 (如 `南孜机房`) |
+| `resource_group` | `VARCHAR(50)` | 分组名称 (如 `南孜 (NanZi)`), 用于文档Tag和权限分类 |
 | `data_source` | `VARCHAR(50)` | 适配器类型 (枚举值: `clickhouse`, `mysql`, `hbase`, `api`)，用于后续扩展 |
 | `resource_mode` | `VARCHAR(20)` | 资源模式: `TABLE` (物理表) 或 `SQL` (自定义查询) |
 | `table_name` | `VARCHAR(200)` | 物理对象名 (仅 `TABLE` 模式有效) |
@@ -72,7 +72,7 @@
         - **增强**: 实现 `custom_openapi` 钩子。
         - **逻辑**: 在生成文档时，从 MetaService 获取所有已注册的资源列表，动态构建 OpenAPI `paths` 对象。
         - **分组 (Tagging)**: 将 `resource_group` 字段的值作为 OpenAPI 的 tags。
-        - **结果**: Swagger UI 将清晰列出 `/api/v1/resources/yunshu_rooms`, `/api/v1/resources/audit_logs` 等独立条目，并自然归类（例如 "云枢" 组, "动环" 组），且参数说明会根据配置的 `allowed_filters` 自动生成。
+        - **结果**: Swagger UI 将清晰列出 `/api/v1/resources/yunshu_rooms`, `/api/v1/resources/audit_logs` 等独立条目，并自然归类（例如 "南孜" 组, "动环" 组），且参数说明会根据配置的 `allowed_filters` 自动生成。
 
 ### 5. 安全设计 (Security Design)
 - **管理端 (Admin)**: 所有的元数据管理接口 (`/api/portal/meta/*`) 均需 `verify_role(["admin"])`。

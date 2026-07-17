@@ -40,7 +40,7 @@
 - **When** 开发者访问 `/docs` (Swagger UI)
 - **Then** 文档中应分别独立列出 `GET /api/v1/resources/yunshu_rooms` 和 `GET /api/v1/resources/audit_logs` 两个接口
 - **And** 接口参数应包含各自配置的过滤字段（如 `yunshu_rooms` 显示 `jfbm` 参数，`audit_logs` 显示 `user_id` 参数）
-- **And** 接口应根据 `resource_group` 字段进行折叠分组（例如 "云枢业务", "系统审计"）。
+- **And** 接口应根据 `resource_group` 字段进行折叠分组（例如 "南孜业务", "系统审计"）。
 
 ### Requirement: 资源分组 (Resource Grouping)
 系统**必须 (MUST)** 支持对资源进行分组定义，以优化文档 and 权限管理的展示。

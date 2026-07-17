@@ -1,12 +1,12 @@
-# 云枢数据服务平台部署安装指南 (HOW TO INSTALL)
+# 南孜数据服务平台部署安装指南 (HOW TO INSTALL)
 
-本指南旨在指导开发和运维人员在本地开发环境或生产环境下完成 **云枢 · 数据服务平台 (Yunshu API Data Platform)** 的安装部署、数据库表结构初始化以及常见问题的快速排查。
+本指南旨在指导开发和运维人员在本地开发环境或生产环境下完成 **南孜 · 数据服务平台 (NanZi API Data Platform)** 的安装部署、数据库表结构初始化以及常见问题的快速排查。
 
 ---
 
 ## 1. 概要 (Overview)
 
-云枢数据服务平台是企业级的 Data API 与元数据治理中枢，将物理表、自定义 SQL 与语义元数据封装为可治理、可审计的 RESTful API。
+南孜数据服务平台是企业级的 Data API 与元数据治理中枢，将物理表、自定义 SQL 与语义元数据封装为可治理、可审计的 RESTful API。
 
 为适应不同用户环境，平台主要提供两套部署方案：
 
@@ -44,7 +44,7 @@
     也可跳过此步，导入脚本会在目标库不存在时自动创建。若需手动创建，请使用 `utf8mb4` 字符集：
 
     ```sql
-    CREATE DATABASE IF NOT EXISTS `yunshu_api_data_platform`
+    CREATE DATABASE IF NOT EXISTS `nanzi_api_data_platform`
       CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     ```
 
@@ -105,7 +105,7 @@
 
     *   **途径一：直接下载官方预编译镜像包（推荐，最便捷）**
 
-        前往 [GitHub Releases](https://github.com/RandyChen1985/yunshu-api-data-platform/releases) 页面，下载对应版本及适合服务器 CPU 架构（如 `linux-amd64` / `linux-arm64`）的离线 Docker 镜像 tar 包。
+        前往 [GitHub Releases](https://github.com/RandyChen1985/nanzi-api-data-platform/releases) 页面，下载对应版本及适合服务器 CPU 架构（如 `linux-amd64` / `linux-arm64`）的离线 Docker 镜像 tar 包。
 
     *   **途径二：本地自行编译并导出镜像包（适合二次开发与定制）**
 
@@ -124,15 +124,15 @@
         ./build_native.sh 1.0.0
         ```
 
-        构建完成后，带版本号与平台架构后缀的镜像 tar 归档包将固定生成在 `docker/release/` 目录下（例如 `yunshu-api_1.0.0_linux-amd64_20260628.tar`）。
+        构建完成后，带版本号与平台架构后缀的镜像 tar 归档包将固定生成在 `docker/release/` 目录下（例如 `nanzi-api_1.0.0_linux-amd64_20260628.tar`）。
 
 2.  **载入离线镜像包**：
 
     将下载或自行编译生成的镜像 tar 包拷贝到目标运行服务器上，执行：
 
     ```bash
-    docker load -i yunshu-api_1.0.0_linux-amd64_20260628.tar
-    docker tag yunshu-api:1.0.0 yunshu-api:latest
+    docker load -i nanzi-api_1.0.0_linux-amd64_20260628.tar
+    docker tag nanzi-api:1.0.0 nanzi-api:latest
     ```
 
 3.  **准备容器环境变量配置文件及 Docker Compose 编排调整**：
@@ -149,7 +149,7 @@
         **关键配置项**：
         ```bash
         MYSQL_HOST=192.168.x.x
-        MYSQL_DB=yunshu_api_data_platform
+        MYSQL_DB=nanzi_api_data_platform
         REDIS_HOST=192.168.x.x
         REDIS_ENABLE=true
         ENCRYPTION_KEY=your-fernet-key-here   # API Key 加密密钥，必须配置
@@ -157,17 +157,17 @@
 
     *   **检查与修改 Docker Compose 编排文件（[docker/docker-compose.api.yml](docker/docker-compose.api.yml)）**：
 
-        1.  **镜像版本校准**：YAML 中默认使用 `image: yunshu-api:latest`。若载入的镜像是带具体版本号的（如 `yunshu-api:1.0.0`），需将 YAML 中 `image:` 指向对应标签；或执行 `docker tag yunshu-api:1.0.0 yunshu-api:latest` 免除修改。
+        1.  **镜像版本校准**：YAML 中默认使用 `image: nanzi-api:latest`。若载入的镜像是带具体版本号的（如 `nanzi-api:1.0.0`），需将 YAML 中 `image:` 指向对应标签；或执行 `docker tag nanzi-api:1.0.0 nanzi-api:latest` 免除修改。
         2.  **Oracle 客户端挂载卷调整（仅当需要直连 Oracle 数据库时）**：根据宿主机 Oracle Instant Client 实际路径，修改 `volumes` 下的挂载目录；若不需要 Oracle，可注释该挂载卷。低版本 Oracle（如 11g）须启用 Thick 模式（`USE_ORACLE_THICK_MODE=1`），详见 [architech/design/ORACLE_INTEGRATION_GUIDE.md](architech/design/ORACLE_INTEGRATION_GUIDE.md)。
 
 4.  **一键启动与停止服务**：
 
     ```bash
     # 启动 API 容器
-    ./start-yunshu-api-server.sh
+    ./start-nanzi-api-server.sh
 
     # 停止并移除容器
-    ./stop-yunshu-api-server.sh
+    ./stop-nanzi-api-server.sh
     ```
 
 详细的 Docker 编排配置，请参考：[docker/README.md](docker/README.md)。

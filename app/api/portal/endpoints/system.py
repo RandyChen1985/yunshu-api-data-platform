@@ -73,7 +73,7 @@ async def update_system_config(payload: Dict[str, str], user=Depends(require_per
                     redis_client = await get_redis()
                     if redis_client:
                         # 兼容 SystemService 的缓存键格式
-                        await redis_client.delete(f"yunshu:config:{key}")
+                        await redis_client.delete(f"nanzi:config:{key}")
                 except Exception as e:
                     logger.warning(f"Failed to invalidate cache for {key}: {e}")
                     

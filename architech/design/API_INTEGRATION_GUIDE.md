@@ -1,6 +1,6 @@
 # API 集成指南 (Integration Guide)
 
-本文档面向开发者，介绍如何集成云枢·数据服务平台对外 API（`/api/v1`）。管理后台 Portal API（`/api/portal`）不在 OpenAPI 中公开，需登录控制台使用。
+本文档面向开发者，介绍如何集成南孜·数据服务平台对外 API（`/api/v1`）。管理后台 Portal API（`/api/portal`）不在 OpenAPI 中公开，需登录控制台使用。
 
 ---
 
@@ -113,7 +113,7 @@ POST /api/v1/query
 }
 ```
 
-查询结果可按资源元数据 `cache_ttl` 缓存（Key：`yunshu:query:{resource}:{hash}`）。
+查询结果可按资源元数据 `cache_ttl` 缓存（Key：`nanzi:query:{resource}:{hash}`）。
 
 ### 3.2 资源快捷查询 (`GET /resources/{key}`)
 

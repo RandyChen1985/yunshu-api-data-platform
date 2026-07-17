@@ -7,7 +7,7 @@
 生产环境的 Docker 镜像必须 (MUST) 包含运行完整应用程序（后端 API + 前端 UI）所需的所有组件，无需外部文件挂载。
 
 #### Scenario: 全栈可用 (Full Stack Available)
--   **Given** 从 `yunshu-api` 镜像启动的运行中容器
+-   **Given** 从 `nanzi-api` 镜像启动的运行中容器
 -   **When** 用户访问根 URL `/`
 -   **Then** 管理门户前端 (SPA) 应该加载。
 

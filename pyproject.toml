@@ -1,5 +1,5 @@
 [project]
-name = "yunshu-api-data-platform"
+name = "nanzi-api-data-platform"
 version = "1.0.0"
 requires-python = ">=3.10"
 

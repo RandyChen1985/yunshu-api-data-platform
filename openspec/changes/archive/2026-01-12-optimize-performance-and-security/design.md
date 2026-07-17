@@ -13,7 +13,7 @@
 
 ### 2. Distributed Metadata Caching
 - **Backend**: Redis。
-- **Key 策略**: `yunshu:meta:config:{resource_key}`。
+- **Key 策略**: `nanzi:meta:config:{resource_key}`。
 - **过期时间 (TTL)**: 默认 3600 秒 (1小时)。
 - **同步机制**: 当元数据更新时（通过管理后台），主动失效（Delete）对应的 Redis Key。
 

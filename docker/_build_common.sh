@@ -9,7 +9,7 @@ if [ -z "$VERSION" ]; then
   echo "错误: 未指定版本号。请使用相应的入口构建脚本并传入版本号 (例如: ./build_linux_x86.sh 1.2.0)"
   exit 1
 fi
-IMAGE_NAME="yunshu-api:$VERSION"
+IMAGE_NAME="nanzi-api:$VERSION"
 
 # PLATFORM: linux/amd64 | linux/arm64；留空则本机原生架构
 # EXPORT_TAR: 1 导出 tar 到 docker/release/（默认）；0 不导出
@@ -95,8 +95,8 @@ ensure_buildx() {
     print_buildx_help
     exit 1
   fi
-  if ! "${BUILDX[@]}" inspect yunshu-api-builder >/dev/null 2>&1; then
-    create_args=(create --name yunshu-api-builder)
+  if ! "${BUILDX[@]}" inspect nanzi-api-builder >/dev/null 2>&1; then
+    create_args=(create --name nanzi-api-builder)
     local proxy_url=""
     if [ -n "${http_proxy:-}" ]; then
       proxy_url="$http_proxy"
@@ -117,7 +117,7 @@ ensure_buildx() {
 
     "${BUILDX[@]}" "${create_args[@]}" --use
   else
-    "${BUILDX[@]}" use yunshu-api-builder >/dev/null
+    "${BUILDX[@]}" use nanzi-api-builder >/dev/null
   fi
 }
 
@@ -174,7 +174,7 @@ run_build() {
 
 LABEL="$(platform_label "${PLATFORM:-}")"
 DATE_TAG="$(date +%Y%m%d)"
-OUTPUT_FILE="$RELEASE_DIR/yunshu-api_${VERSION}_${LABEL}_${DATE_TAG}.tar"
+OUTPUT_FILE="$RELEASE_DIR/nanzi-api_${VERSION}_${LABEL}_${DATE_TAG}.tar"
 
 echo "=== 开始构建 Docker 镜像 ==="
 echo "项目根目录: $PROJECT_ROOT"

@@ -1,8 +1,8 @@
 # deployment Specification
 
 ## Purpose
-Define containerized deployment requirements for the Yunshu API Data Platform.
-定义云枢数据服务平台的容器化部署要求。
+Define containerized deployment requirements for the NanZi API Data Platform.
+定义南孜数据服务平台的容器化部署要求。
 
 ## Requirements
 

@@ -5,8 +5,8 @@ SET NAMES utf8mb4;
 
 INSERT IGNORE INTO sys_config (config_key, config_value, config_group, remark) VALUES
 ('branding.enabled', 'false', 'branding', '是否启用品牌个性化'),
-('branding.product_name', '云枢 · 数据服务平台', 'branding', '产品名称（浏览器标题、侧栏、登录页）'),
-('branding.login_subtitle', 'Yunshu API Data Platform', 'branding', '登录页副标题'),
+('branding.product_name', '南孜 · 数据服务平台', 'branding', '产品名称（浏览器标题、侧栏、登录页）'),
+('branding.login_subtitle', 'NanZi API Data Platform', 'branding', '登录页副标题'),
 ('branding.icon_url', '/favicon.png', 'branding', 'Logo / Favicon 地址（相对或绝对 URL）'),
 ('branding.hide_login_sso', 'false', 'branding', '登录页隐藏 SSO 登录'),
 ('branding.hide_version_link', 'false', 'branding', '侧栏版本号取消 GitHub 外链'),

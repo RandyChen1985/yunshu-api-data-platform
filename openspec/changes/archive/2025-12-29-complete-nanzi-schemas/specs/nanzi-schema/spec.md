@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Full-Field Resource Response
-The API MUST return all available columns from the underlying data warehouse tables for Yunshu resources (Rooms, Racks, Device Points).
+The API MUST return all available columns from the underlying data warehouse tables for NanZi resources (Rooms, Racks, Device Points).
 
 #### Scenario: Complete Room Details
 - **WHEN** 查询 `/yunshu/rooms` 接口。

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # SSO Configuration
     SSO_API_URL: str = "https://yovole.net/api/v1/user/check/login"
     SSO_ACCESS_TOKEN: str = "laplace"
-    SSO_REQUEST_SYSTEM: str = "YUNSHU_API_DATA_PLATFORM"
+    SSO_REQUEST_SYSTEM: str = "NANZI_API_DATA_PLATFORM"
     SSO_REQUEST_BUSINESS: str = "USER-LOGIN"
     SSO_TIMEOUT: int = 30
 

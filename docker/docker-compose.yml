@@ -3,8 +3,8 @@ version: "3.8"
 # 生产/预发：API + Redis，不挂载源码
 services:
   api:
-    image: yunshu-api:latest
-    container_name: yunshu-api
+    image: nanzi-api:latest
+    container_name: nanzi-api
     ports:
       - "8000:8000"
     env_file:
@@ -18,7 +18,7 @@ services:
       - LD_LIBRARY_PATH=/opt/oracle/instantclient
       - MYSQL_HOST=${MYSQL_HOST:-host.docker.internal}
       - MYSQL_PORT=${MYSQL_PORT:-3306}
-      - MYSQL_DB=${MYSQL_DB:-yunshu_api_data_platform}
+      - MYSQL_DB=${MYSQL_DB:-nanzi_api_data_platform}
       - MYSQL_USER=${MYSQL_USER:-root}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - REDIS_HOST=${REDIS_HOST:-redis}
@@ -28,14 +28,14 @@ services:
       - REDIS_ENABLE=${REDIS_ENABLE:-true}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     volumes:
-      - /app/yunshu-api/lib/instantclient_19_30:/opt/oracle/instantclient
+      - /app/nanzi-api/lib/instantclient_19_30:/opt/oracle/instantclient
     depends_on:
       - redis
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: yunshu-redis
+    container_name: nanzi-redis
     ports:
       - "6379:6379"
     restart: unless-stopped

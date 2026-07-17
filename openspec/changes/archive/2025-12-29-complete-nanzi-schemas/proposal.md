@@ -1,4 +1,4 @@
-# Change: Complete Yunshu Resource Schemas
+# Change: Complete NanZi Resource Schemas
 
 ## Why
 目前的 `YunshuRoomResponse`, `YunshuRackResponse`, `YunshuDevicePointResponse` 仅包含少量核心字段，无法满足业务层对全量基础数据的查询需求。我们需要根据 `CLICKHOUSE_TABLES.md` 中的定义，补全这些模型的所有字段。

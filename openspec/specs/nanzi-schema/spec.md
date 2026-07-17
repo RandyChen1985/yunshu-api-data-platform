@@ -1,10 +1,10 @@
-# yunshu-schema Specification
+# nanzi-schema Specification
 
 ## Purpose
-TBD - created by archiving change complete-yunshu-schemas. Update Purpose after archive.
+TBD - created by archiving change complete-nanzi-schemas. Update Purpose after archive.
 ## Requirements
 ### Requirement: Full-Field Resource Response
-The API MUST return all available columns from the underlying data warehouse tables for Yunshu resources (Rooms, Racks, Device Points).
+The API MUST return all available columns from the underlying data warehouse tables for NanZi resources (Rooms, Racks, Device Points).
 
 #### Scenario: Complete Room Details
 - **WHEN** 查询 `/yunshu/rooms` 接口。

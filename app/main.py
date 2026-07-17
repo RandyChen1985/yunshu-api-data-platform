@@ -45,11 +45,11 @@ async def lifespan(app: FastAPI):
     await redis.close_redis()
 
 app = FastAPI(
-    title="云枢·数据服务平台",
+    title="南孜·数据服务平台",
     description="""
 ## 概述
 
-云枢数据服务平台提供统一的数据查询接口，支持动环数据、智服平台资源等多源数据访问。
+南孜数据服务平台提供统一的数据查询接口，支持动环数据、智服平台资源等多源数据访问。
 基于 FastAPI 构建，对接 ClickHouse (OLAP) 和 MySQL (元数据)，提供高性能、低延迟的数据服务。
 
 ## 核心特性
@@ -105,7 +105,7 @@ X-API-Key: your_api_key_here
     """,
     version="1.0.0",
     contact={
-        "name": "Yunshu API Data Platform",
+        "name": "NanZi API Data Platform",
         "email": "cexlong@gmail.com",
     },
     license_info={

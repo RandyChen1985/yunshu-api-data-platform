@@ -2,7 +2,7 @@
 -- Add password_hash and sso fields to api_users
 -- Date: 2026-01-01
 
-USE yunshu_api_data_platform;
+USE nanzi_api_data_platform;
 
 ALTER TABLE api_users 
 ADD COLUMN password_hash VARCHAR(255) COMMENT 'Bcrypt hash of the password';

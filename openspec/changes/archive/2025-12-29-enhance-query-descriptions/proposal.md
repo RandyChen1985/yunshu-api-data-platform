@@ -1,7 +1,7 @@
 # Change: Enhance Query Descriptions
 
 ## Why
-在 `app/api/v1/endpoints/resources.py` 中，部分接口（如 `get_donghuan_metric_summary` 和云枢系列接口）的 Query 参数描述较为简略，缺乏详细的中文备注和业务示例，影响了开发者（特别是 AI Agent）对参数含义的理解。
+在 `app/api/v1/endpoints/resources.py` 中，部分接口（如 `get_donghuan_metric_summary` 和南孜系列接口）的 Query 参数描述较为简略，缺乏详细的中文备注和业务示例，影响了开发者（特别是 AI Agent）对参数含义的理解。
 
 ## What Changes
 - **MODIFIED**: `app/api/v1/endpoints/resources.py`

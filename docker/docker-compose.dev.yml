@@ -6,8 +6,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: yunshu-api:dev
-    container_name: yunshu-api-dev
+    image: nanzi-api:dev
+    container_name: nanzi-api-dev
     ports:
       - "8000:8000"
     volumes:
@@ -29,7 +29,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: yunshu-redis-dev
+    container_name: nanzi-redis-dev
     ports:
       - "6379:6379"
     restart: unless-stopped

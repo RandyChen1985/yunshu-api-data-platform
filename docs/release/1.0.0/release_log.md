@@ -1,10 +1,10 @@
-# 🎉 Yunshu API Data Platform v1.0.0 Release Notes
+# 🎉 NanZi API Data Platform v1.0.0 Release Notes
 
-Welcome to the **first official release** of Yunshu API Data Platform (云枢 · 数据服务平台)! 🚀
+Welcome to the **first official release** of NanZi API Data Platform (南孜 · 数据服务平台)! 🚀
 
-**GitHub Repository**: [RandyChen1985/yunshu-api-data-platform](https://github.com/RandyChen1985/yunshu-api-data-platform)
+**GitHub Repository**: [RandyChen1985/nanzi-api-data-platform](https://github.com/RandyChen1985/nanzi-api-data-platform)
 
-v1.0.0 是云枢数据服务平台的**首个正式开源版本**，面向企业数据消费场景提供一站式 **Data-as-a-Service (DaaS)** 能力。平台将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，可作为 **[云枢 · 智能体平台](https://github.com/RandyChen1985/yunshu-ai-agent-platform)** 的标准化数据底座。
+v1.0.0 是南孜数据服务平台的**首个正式开源版本**，面向企业数据消费场景提供一站式 **Data-as-a-Service (DaaS)** 能力。平台将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，可作为 **[南孜 · 智能体平台](https://github.com/RandyChen1985/nanzi-ai-agent-platform)** 的标准化数据底座。
 
 本次发布范围自 `73a1324`（含）至 `43849b7`，共 **10 个提交**，涵盖核心后端、Vue 3 管理后台、数据库迁移脚本、Docker 离线部署与完整开源文档资产。
 
@@ -47,14 +47,14 @@ v1.0.0 是云枢数据服务平台的**首个正式开源版本**，面向企业
 
 ### 6. 🔌 开放集成与生态互补
 
-* **标准化对外 API**：`/api/v1` 公开接口与管理后台 Portal API，配套 [API 集成指南](https://github.com/RandyChen1985/yunshu-api-data-platform/blob/main/architech/design/API_INTEGRATION_GUIDE.md)。
-* **智能体平台对接**：可作为云枢 AI 智能体平台的 Data API 与元数据治理层，为 ChatBI / Agent 提供标准化数据访问。
-* **Oracle 专项支持**：Thin / Thick 双驱动适配，详见 [Oracle 集成指南](https://github.com/RandyChen1985/yunshu-api-data-platform/blob/main/architech/design/ORACLE_INTEGRATION_GUIDE.md)。
+* **标准化对外 API**：`/api/v1` 公开接口与管理后台 Portal API，配套 [API 集成指南](https://github.com/RandyChen1985/nanzi-api-data-platform/blob/main/architech/design/API_INTEGRATION_GUIDE.md)。
+* **智能体平台对接**：可作为南孜 AI 智能体平台的 Data API 与元数据治理层，为 ChatBI / Agent 提供标准化数据访问。
+* **Oracle 专项支持**：Thin / Thick 双驱动适配，详见 [Oracle 集成指南](https://github.com/RandyChen1985/nanzi-api-data-platform/blob/main/architech/design/ORACLE_INTEGRATION_GUIDE.md)。
 
 ### 7. 📄 文档与开源资产
 
 * **双语 README**：中英文 README，含系统架构图、核心能力全景图与 6 张管理后台界面截屏。
-* **部署指南**：[HOW_TO_INSTALL.md](https://github.com/RandyChen1985/yunshu-api-data-platform/blob/main/HOW_TO_INSTALL.md) 覆盖 Docker 离线部署与本地开发联调。
+* **部署指南**：[HOW_TO_INSTALL.md](https://github.com/RandyChen1985/nanzi-api-data-platform/blob/main/HOW_TO_INSTALL.md) 覆盖 Docker 离线部署与本地开发联调。
 * **一键开发脚本**：`dev.sh` 自动编译前端、释放端口并以 `--reload` 模式启动后端。
 
 ---
@@ -75,7 +75,7 @@ v1.0.0 是云枢数据服务平台的**首个正式开源版本**，面向企业
 
 ## 🗄️ Database Schema (数据库结构说明)
 
-v1.0.0 首次部署包含 **25 个**版本化迁移脚本（存放于 [db-prod/](https://github.com/RandyChen1985/yunshu-api-data-platform/tree/main/db-prod) 目录）：
+v1.0.0 首次部署包含 **25 个**版本化迁移脚本（存放于 [db-prod/](https://github.com/RandyChen1985/nanzi-api-data-platform/tree/main/db-prod) 目录）：
 
 | 脚本范围 | 核心变更内容 |
 | :--- | :--- |
@@ -91,7 +91,7 @@ v1.0.0 首次部署包含 **25 个**版本化迁移脚本（存放于 [db-prod/]
 
 ## 📦 Quick Start
 
-请参考项目根目录下的 [HOW_TO_INSTALL.md](https://github.com/RandyChen1985/yunshu-api-data-platform/blob/main/HOW_TO_INSTALL.md) 进行部署。
+请参考项目根目录下的 [HOW_TO_INSTALL.md](https://github.com/RandyChen1985/nanzi-api-data-platform/blob/main/HOW_TO_INSTALL.md) 进行部署。
 
 ### 本地快速开发模式启动：
 
@@ -115,9 +115,9 @@ cp env.example .env
 cd docker
 cp ../env.example .env
 ./build_linux_x86.sh 1.0.0
-docker load -i release/yunshu-api_1.0.0_linux-amd64_*.tar
-docker tag yunshu-api:1.0.0 yunshu-api:latest
-./start-yunshu-api-server.sh
+docker load -i release/nanzi-api_1.0.0_linux-amd64_*.tar
+docker tag nanzi-api:1.0.0 nanzi-api:latest
+./start-nanzi-api-server.sh
 ```
 
 ---
@@ -136,7 +136,7 @@ docker tag yunshu-api:1.0.0 yunshu-api:latest
 - [ ] **可观测看板**：调用趋势、Top 排行、在线用户与连接池健康。
 - [ ] **回归测试**：运行 `pytest tests/`，确保核心用例通过。
 
-完整测试清单见 [tests/CHECKLIST.md](https://github.com/RandyChen1985/yunshu-api-data-platform/blob/main/tests/CHECKLIST.md)。
+完整测试清单见 [tests/CHECKLIST.md](https://github.com/RandyChen1985/nanzi-api-data-platform/blob/main/tests/CHECKLIST.md)。
 
 ---
 
@@ -144,25 +144,25 @@ docker tag yunshu-api:1.0.0 yunshu-api:latest
 
 本项目 v1.0.0 发布版本关联的源码、Docker 镜像资产归档包及配置文件如下：
 
-* 📦 **Source Code (zip)**: `yunshu-api-data-platform-1.0.0.zip`
-* 📦 **Source Code (tar.gz)**: `yunshu-api-data-platform-1.0.0.tar.gz`
-* 🐳 **Docker Image for Linux amd64 (x86_64)**: `yunshu-api_1.0.0_linux-amd64_*.tar`
-* 🐳 **Docker Image for Linux arm64 (aarch64)**: `yunshu-api_1.0.0_linux-arm64_*.tar`
+* 📦 **Source Code (zip)**: `nanzi-api-data-platform-1.0.0.zip`
+* 📦 **Source Code (tar.gz)**: `nanzi-api-data-platform-1.0.0.tar.gz`
+* 🐳 **Docker Image for Linux amd64 (x86_64)**: `nanzi-api_1.0.0_linux-amd64_*.tar`
+* 🐳 **Docker Image for Linux arm64 (aarch64)**: `nanzi-api_1.0.0_linux-arm64_*.tar`
 * ⚙️ **Docker Compose YAML file**: `docker-compose.yml`
 
-🔗 **下载地址**: [GitHub Releases v1.0.0](https://github.com/RandyChen1985/yunshu-api-data-platform/releases/tag/1.0.0)
+🔗 **下载地址**: [GitHub Releases v1.0.0](https://github.com/RandyChen1985/nanzi-api-data-platform/releases/tag/1.0.0)
 
 ### 🐳 如何在离线/内网环境加载 Docker 镜像归档：
 
 ```bash
 # 1. 加载本地镜像归档
-docker load -i yunshu-api_1.0.0_linux-amd64_*.tar
+docker load -i nanzi-api_1.0.0_linux-amd64_*.tar
 
 # 2. 检查是否加载成功
-docker images | grep yunshu-api
+docker images | grep nanzi-api
 
 # 3. 利用启动脚本快速拉起服务
-cd docker && ./start-yunshu-api-server.sh
+cd docker && ./start-nanzi-api-server.sh
 ```
 
 ---
@@ -180,7 +180,7 @@ cd docker && ./start-yunshu-api-server.sh
 | `dde6696` | docs: README 补充概览图与技术架构图 |
 | `acb5025` | docs: 更新 README 与安装指南中的 GitHub 链接 |
 | `e570c4f` | chore: 开源协作与文档整理 |
-| `73a1324` | feat: 云枢数据服务平台首次开源发布 |
+| `73a1324` | feat: 南孜数据服务平台首次开源发布 |
 
 ---
 
@@ -188,4 +188,4 @@ cd docker && ./start-yunshu-api-server.sh
 
 感谢所有参与 v1.0.0 版本发布的开发者！
 
-For complete test coverage check out [tests/CHECKLIST.md](https://github.com/RandyChen1985/yunshu-api-data-platform/blob/main/tests/CHECKLIST.md).
+For complete test coverage check out [tests/CHECKLIST.md](https://github.com/RandyChen1985/nanzi-api-data-platform/blob/main/tests/CHECKLIST.md).

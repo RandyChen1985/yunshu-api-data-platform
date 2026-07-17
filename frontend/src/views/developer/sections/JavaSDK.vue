@@ -13,12 +13,12 @@
       <pre class="bg-gray-900 text-gray-100 p-6 rounded-xl text-sm leading-relaxed overflow-x-auto"><code>import okhttp3.*;
 import java.io.IOException;
 
-public class YunshuClient {
+public class NanZiClient {
     private final String baseUrl;
     private final String apiKey;
     private final OkHttpClient client;
 
-    public YunshuClient(String baseUrl, String apiKey) {
+    public NanZiClient(String baseUrl, String apiKey) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.apiKey = apiKey;
         this.client = new OkHttpClient();
@@ -45,7 +45,7 @@ public class YunshuClient {
     }
 
     public static void main(String[] args) {
-        YunshuClient client = new YunshuClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE");
+        NanZiClient client = new NanZiClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE");
         try {
             String rooms = client.getRooms(1, 20);
             System.out.println(rooms);
@@ -66,12 +66,12 @@ const copied = ref(false)
 const codeText = `import okhttp3.*;
 import java.io.IOException;
 
-public class YunshuClient {
+public class NanZiClient {
     private final String baseUrl;
     private final String apiKey;
     private final OkHttpClient client;
 
-    public YunshuClient(String baseUrl, String apiKey) {
+    public NanZiClient(String baseUrl, String apiKey) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.apiKey = apiKey;
         this.client = new OkHttpClient();
@@ -98,7 +98,7 @@ public class YunshuClient {
     }
 
     public static void main(String[] args) {
-        YunshuClient client = new YunshuClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE");
+        NanZiClient client = new NanZiClient("https://your-api-host.example.com", "YOUR_API_KEY_HERE");
         try {
             String rooms = client.getRooms(1, 20);
             System.out.println(rooms);

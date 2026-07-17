@@ -132,7 +132,7 @@ async def execute_query(
                 query_dict = query_in.dict()
                 query_str = json.dumps(query_dict, sort_keys=True)
                 query_hash = hashlib.md5(query_str.encode()).hexdigest()
-                cache_key = f"yunshu:query:{query_in.resource}:{query_hash}"
+                cache_key = f"nanzi:query:{query_in.resource}:{query_hash}"
                 
                 r = await redis.get_redis()
                 if r:

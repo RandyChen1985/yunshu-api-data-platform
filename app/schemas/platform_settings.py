@@ -32,13 +32,13 @@ class McpPlatformSettings(BaseModel):
     public_base_url: str = ""
     sse_path: str = "/mcp/sse"
     sse_url: str = ""
-    stdio_command: str = "python -m yunshu_mcp"
+    stdio_command: str = "python -m nanzi_mcp"
 
 
 class BrandingPlatformSettings(BaseModel):
     enabled: bool = False
-    product_name: str = "云枢 · 数据服务平台"
-    login_subtitle: str = "Yunshu API Data Platform"
+    product_name: str = "南孜 · 数据服务平台"
+    login_subtitle: str = "NanZi API Data Platform"
     icon_url: str = "/favicon.png"
     hide_login_sso: bool = False
     hide_version_link: bool = False
@@ -48,8 +48,8 @@ class BrandingPlatformSettings(BaseModel):
 
 class BrandingPlatformSettingsUpdate(BaseModel):
     enabled: bool = False
-    product_name: str = "云枢 · 数据服务平台"
-    login_subtitle: str = "Yunshu API Data Platform"
+    product_name: str = "南孜 · 数据服务平台"
+    login_subtitle: str = "NanZi API Data Platform"
     icon_url: str = "/favicon.png"
     hide_login_sso: bool = False
     hide_version_link: bool = False

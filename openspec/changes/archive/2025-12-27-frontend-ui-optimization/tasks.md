@@ -76,7 +76,7 @@
   - [ ] 4.3.3 添加新字段 api_key_encrypted（TEXT）
   - [ ] 4.3.4 添加新字段 api_key_hash（VARCHAR(64) UNIQUE）
   - [ ] 4.3.5 清空现有数据（开发环境）
-  - [ ] 4.3.6 更新 db-prod/yunshu_api_metadata.sql 文件
+  - [ ] 4.3.6 更新 db-prod/nanzi_api_metadata.sql 文件
 - [ ] 4.4 重写 AuthService
   - [ ] 4.4.1 修改 generate_api_key() 使用新的加密机制
   - [ ] 4.4.2 修改 verify_api_key() 使用哈希验证

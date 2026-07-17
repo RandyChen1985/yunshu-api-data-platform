@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">开发者中心 (Developer Portal)</h1>
-      <p class="text-sm text-gray-500 mt-1">欢迎使用云枢数据 API 平台。本中心提供完善的 API 接入引导、SDK 示例及错误码参考。</p>
+      <p class="text-sm text-gray-500 mt-1">欢迎使用南孜数据 API 平台。本中心提供完善的 API 接入引导、SDK 示例及错误码参考。</p>
     </div>
 
     <div class="flex gap-2 border-b border-gray-200 overflow-x-auto">

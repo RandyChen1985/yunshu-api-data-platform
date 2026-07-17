@@ -8,9 +8,9 @@ from app.mcp_integration import is_mcp_sse_mounted
 from app.services.mcp_settings_service import McpSettingsService
 
 EXPECTED_TOOLS = (
-    "yunshu_list_resources",
-    "yunshu_query_resource",
-    "yunshu_search_metadata",
+    "nanzi_list_resources",
+    "nanzi_query_resource",
+    "nanzi_search_metadata",
 )
 
 
@@ -45,7 +45,7 @@ class McpTestService:
             return False, cls._result(checks, tools, sse_url)
 
         try:
-            from yunshu_mcp.server import get_mcp_server
+            from nanzi_mcp.server import get_mcp_server
 
             mcp = get_mcp_server()
             registered = await mcp.list_tools()

@@ -9,8 +9,8 @@ class McpSettingsService:
     SSE_PATH = "/mcp/sse"
 
     DEFAULT_INSTRUCTIONS = (
-        "云枢数据平台 MCP：先调用 yunshu_list_resources 查看可访问资源，"
-        "yunshu_search_metadata 检索表/指标元数据，yunshu_query_resource 按资源 Key 查询数据。"
+        "南孜数据平台 MCP：先调用 nanzi_list_resources 查看可访问资源，"
+        "nanzi_search_metadata 检索表/指标元数据，nanzi_query_resource 按资源 Key 查询数据。"
     )
 
     @classmethod
@@ -37,7 +37,7 @@ class McpSettingsService:
             "enabled": await cls.is_enabled(),
             "instructions": (instructions or cls.DEFAULT_INSTRUCTIONS).strip(),
             "sse_path": cls.SSE_PATH,
-            "stdio_command": "python -m yunshu_mcp",
+            "stdio_command": "python -m nanzi_mcp",
         }
         return cls.with_request_base(core, request_base_url)
 

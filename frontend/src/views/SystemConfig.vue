@@ -144,12 +144,12 @@ const mcpConfig = ref({
   instructions: '',
   sse_path: '/mcp/sse',
   sse_url: '',
-  stdio_command: 'python -m yunshu_mcp',
+  stdio_command: 'python -m nanzi_mcp',
 })
 const brandingConfig = ref({
   enabled: false,
-  product_name: '云枢 · 数据服务平台',
-  login_subtitle: 'Yunshu API Data Platform',
+  product_name: '南孜 · 数据服务平台',
+  login_subtitle: 'NanZi API Data Platform',
   icon_url: '/favicon.png',
   hide_login_sso: false,
   hide_version_link: false,
@@ -200,12 +200,12 @@ const applyPlatformSettings = (data: any) => {
   mcpConfig.value.instructions = mcp.instructions || ''
   mcpConfig.value.sse_path = mcp.sse_path || '/mcp/sse'
   mcpConfig.value.sse_url = mcp.sse_url || ''
-  mcpConfig.value.stdio_command = mcp.stdio_command || 'python -m yunshu_mcp'
+  mcpConfig.value.stdio_command = mcp.stdio_command || 'python -m nanzi_mcp'
 
   const branding = data.branding || {}
   brandingConfig.value.enabled = !!branding.enabled
-  brandingConfig.value.product_name = branding.product_name || '云枢 · 数据服务平台'
-  brandingConfig.value.login_subtitle = branding.login_subtitle || 'Yunshu API Data Platform'
+  brandingConfig.value.product_name = branding.product_name || '南孜 · 数据服务平台'
+  brandingConfig.value.login_subtitle = branding.login_subtitle || 'NanZi API Data Platform'
   brandingConfig.value.icon_url = branding.icon_url || '/favicon.png'
   brandingConfig.value.hide_login_sso = !!branding.hide_login_sso
   brandingConfig.value.hide_version_link = !!branding.hide_version_link
@@ -355,7 +355,7 @@ const mcpSseCursorExample = computed(() =>
   JSON.stringify(
     {
       mcpServers: {
-        yunshu: {
+        nanzi: {
           url: mcpConfig.value.sse_url || 'https://data.example.com/mcp/sse',
           headers: {
             'X-API-Key': '你的个人 API Key',
@@ -1600,7 +1600,7 @@ const formatDateTime = (val: string) => {
                 <p><span class="text-gray-400">stdio 启动：</span><code class="font-mono">{{ mcpConfig.stdio_command }}</code></p>
                 <p class="text-gray-500 pt-2 leading-relaxed">
                   远程客户端推荐 SSE：复制上方配置，将 <code class="bg-white px-1 rounded">X-API-Key</code> 换成个人 Key（与门户「我的 API Key」相同）。
-                  本机开发可用 stdio，在 <code class="bg-white px-1 rounded">env</code> 中配置 <code class="bg-white px-1 rounded">YUNSHU_API_KEY</code> 与 <code class="bg-white px-1 rounded">YUNSHU_BASE_URL</code>。
+                  本机开发可用 stdio，在 <code class="bg-white px-1 rounded">env</code> 中配置 <code class="bg-white px-1 rounded">NANZI_API_KEY</code> 与 <code class="bg-white px-1 rounded">NANZI_BASE_URL</code>。
                 </p>
               </div>
             </fieldset>
@@ -1666,7 +1666,7 @@ const formatDateTime = (val: string) => {
                   v-model="brandingConfig.product_name"
                   type="text"
                   class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                  placeholder="云枢 · 数据服务平台"
+                  placeholder="南孜 · 数据服务平台"
                 />
                 <p class="text-xs text-gray-400 mt-1">影响浏览器标题、左侧菜单栏名称、登录页</p>
               </div>
@@ -1677,7 +1677,7 @@ const formatDateTime = (val: string) => {
                   v-model="brandingConfig.login_subtitle"
                   type="text"
                   class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                  placeholder="Yunshu API Data Platform"
+                  placeholder="NanZi API Data Platform"
                 />
               </div>
 

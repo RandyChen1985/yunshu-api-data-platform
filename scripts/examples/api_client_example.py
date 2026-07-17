@@ -3,7 +3,7 @@ import json
 import time
 
 """
-云枢·数据服务平台 API 调用示例 (Python)
+南孜·数据服务平台 API 调用示例 (Python)
 该脚本演示了如何使用 requests 库调用通用查询接口。
 """
 
@@ -39,9 +39,9 @@ def execute_logical_query(resource, filters=None, sort_by=None, page=1, size=10)
         print(f"Error {response.status_code}: {response.text}")
         return None
 
-def get_yunshu_rooms():
-    """获取云枢机房列表示例"""
-    url = f"{BASE_URL}/resources/rooms"
+def get_rooms():
+    """获取机房列表示例（resource_key: yunshu_rooms）"""
+    url = f"{BASE_URL}/resources/yunshu_rooms"
     headers = {"X-API-Key": API_KEY}
     
     response = requests.get(url, headers=headers)
@@ -63,5 +63,5 @@ if __name__ == "__main__":
             print(f"Time: {m['metric_time']} | Value: {m['metric_value']}")
 
     # 示例 2: 获取机房列表
-    rooms = get_yunshu_rooms()
+    rooms = get_rooms()
     print(f"\nAvailable Rooms: {[r.get('room_name') for r in rooms]}")

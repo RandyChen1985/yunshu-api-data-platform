@@ -110,7 +110,7 @@ class WeComNotificationService:
     async def send_test_message(cls, override: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
         content = (
             "### 企微通知测试\n"
-            "这是一条来自**云枢 · 数据服务平台**的测试消息，说明群机器人配置可用。"
+            "这是一条来自**南孜 · 数据服务平台**的测试消息，说明群机器人配置可用。"
         )
         if override is not None:
             if not override.get("enabled"):

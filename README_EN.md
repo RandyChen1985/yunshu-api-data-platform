@@ -1,4 +1,4 @@
-# Yunshu API Data Platform (云枢 · 数据服务平台)
+# NanZi API Data Platform (南孜 · 数据服务平台)
 
 [简体中文](README.md) | **English**
 
@@ -7,9 +7,9 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg?logo=vue.js&logoColor=white)](https://vuejs.org/) [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![ClickHouse](https://img.shields.io/badge/ClickHouse-Ready-FFCC00.svg?logo=clickhouse&logoColor=black)](https://clickhouse.com/) [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql&logoColor=white)](https://www.mysql.com/) [![Redis](https://img.shields.io/badge/Redis-Active-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-![Yunshu API Data Platform Overview](docs/images/overview.png)
+![NanZi API Data Platform Overview](docs/images/overview.png)
 
-**Yunshu API Data Platform** is a one-stop **Data-as-a-Service (DaaS)** hub for enterprise data consumption. It wraps physical tables, custom SQL, and semantic metadata into governable, auditable, and observable RESTful APIs — providing standardized data access for AI agents, operations consoles, and business systems.
+**NanZi API Data Platform** is a one-stop **Data-as-a-Service (DaaS)** hub for enterprise data consumption. It wraps physical tables, custom SQL, and semantic metadata into governable, auditable, and observable RESTful APIs — providing standardized data access for AI agents, operations consoles, and business systems.
 
 The platform focuses on the following core capability matrix:
 
@@ -19,13 +19,13 @@ The platform focuses on the following core capability matrix:
 *   📦 **Data Product Catalog**: Productized API publishing, domain browsing, access request/approval workflow, asset panorama KPIs, and call-volume insights.
 *   🛡️ **Enterprise Security & Audit**: Daily-sharded audit logs, AST-based SQL guards, API Key + Session dual auth, data masking policies.
 *   📊 **Full-Stack Observability**: 24h/7d call trends, Top rankings, minute-level stats aggregation, connection pool health monitoring.
-*   🔌 **Open Integration**: Standardized `/api/v1` public APIs and Portal admin APIs; serves as the data foundation for **[Yunshu AI Agent Platform](https://github.com/RandyChen1985/yunshu-ai-agent-platform)**.
+*   🔌 **Open Integration**: Standardized `/api/v1` public APIs and Portal admin APIs; serves as the data foundation for **[NanZi AI Agent Platform](https://github.com/RandyChen1985/nanzi-ai-agent-platform)**.
 
 ---
 
 ## 🏛️ Architecture
 
-![Yunshu API Data Platform Architecture](docs/images/architech.png)
+![NanZi API Data Platform Architecture](docs/images/architech.png)
 
 ---
 
@@ -45,7 +45,7 @@ The platform focuses on the following core capability matrix:
 
 ## 🌟 Core Capabilities
 
-![Yunshu API Data Platform Core Capabilities](docs/images/features.png)
+![NanZi API Data Platform Core Capabilities](docs/images/features.png)
 
 ### 1. 🚀 Resource-as-an-API
 
@@ -174,11 +174,11 @@ cp ../env.example .env   # DB, Redis, ENCRYPTION_KEY, etc.
 ./build_linux_x86.sh 1.0.0
 ```
 
-Artifacts are written to **`docker/release/`**, e.g. `yunshu-api_1.0.0_linux-amd64_20260628.tar`. Offline deployment:
+Artifacts are written to **`docker/release/`**, e.g. `nanzi-api_1.0.0_linux-amd64_20260628.tar`. Offline deployment:
 
 ```bash
-docker load -i docker/release/yunshu-api_1.0.0_linux-amd64_*.tar
-docker tag yunshu-api:1.0.0 yunshu-api:latest
+docker load -i docker/release/nanzi-api_1.0.0_linux-amd64_*.tar
+docker tag nanzi-api:1.0.0 nanzi-api:latest
 ```
 
 > On Apple Silicon Macs deploying to x86 servers, use `build_linux_x86.sh`, not `build_native.sh`.
@@ -195,7 +195,7 @@ See [docker/README.md](docker/README.md) for details.
 **3. Start services**
 
 ```bash
-./start-yunshu-api-server.sh
+./start-nanzi-api-server.sh
 ```
 
 Service listens on **http://localhost:8000** (admin console, `/docs` API reference).
@@ -246,9 +246,9 @@ cd frontend && npm run dev
 
 ---
 
-## 🔗 Yunshu Ecosystem
+## 🔗 NanZi Ecosystem
 
-This platform is the **data service layer** in the Yunshu AI stack, complementing the [Yunshu AI Agent Platform](https://github.com/RandyChen1985/yunshu-ai-agent-platform):
+This platform is the **data service layer** in the NanZi AI stack, complementing the [NanZi AI Agent Platform](https://github.com/RandyChen1985/nanzi-ai-agent-platform):
 
 | Platform | Role |
 |----------|------|
@@ -271,7 +271,7 @@ Issues and Pull Requests are welcome.
 
 ## 💬 Contact & Community
 
-- **Issues**: Report bugs and feature requests on [GitHub Issues](https://github.com/RandyChen1985/yunshu-api-data-platform/issues).
+- **Issues**: Report bugs and feature requests on [GitHub Issues](https://github.com/RandyChen1985/nanzi-api-data-platform/issues).
 - **Email**: Reach us via Issue comments.
 
 If you have any questions, feature suggestions, or need further technical updates, please scan the QR code to follow our WeChat Official Account:
@@ -286,4 +286,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Copyright © 2025-2026 Yunshu API Data Platform Contributors. All Rights Reserved.
+Copyright © 2025-2026 NanZi API Data Platform Contributors. All Rights Reserved.

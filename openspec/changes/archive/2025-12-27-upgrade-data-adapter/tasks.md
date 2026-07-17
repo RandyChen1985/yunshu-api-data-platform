@@ -11,9 +11,9 @@
 
 ## 3. 集成与修复 (Integration)
 - [x] 3.1 更新 `app/api/v1/endpoints/resources_donghuan.py` 中的导入。
-- [x] 3.2 更新 `app/api/v1/endpoints/resources_yunshu.py` 中的导入。
+- [x] 3.2 更新 `app/api/v1/endpoints/resources_nanzi.py` 中的导入。
 - [x] 3.3 更新其他所有相关位置的导入。
 
 ## 4. 验证 (Verification)
 - [x] 4.1 运行 `pytest tests/test_resources_donghuan.py` 确保无回归。
-- [x] 4.2 运行 `pytest tests/test_resources_yunshu.py` 确保无回归。
+- [x] 4.2 运行 `pytest tests/test_resources_nanzi.py` 确保无回归。

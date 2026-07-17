@@ -15,7 +15,7 @@ def get_mcp_api_key() -> str:
     key = _mcp_api_key_ctx.get()
     if key:
         return key
-    return (os.getenv("YUNSHU_API_KEY") or "").strip()
+    return (os.getenv("NANZI_API_KEY") or "").strip()
 
 
 def bind_session_api_key(session_id: str, api_key: str) -> None:

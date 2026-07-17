@@ -57,7 +57,7 @@
 
 | Key 规范 | 说明 | TTL |
 | :--- | :--- | :--- |
-| `yunshu:config:{config_key}` | UI 可改的全局配置项 | 1h |
+| `nanzi:config:{config_key}` | UI 可改的全局配置项 | 1h |
 
 实现：`app/services/system_service.py`
 
@@ -65,7 +65,7 @@
 
 | Key 规范 | 说明 | TTL |
 | :--- | :--- | :--- |
-| `yunshu:meta:config:{resource_key}` | 单资源完整配置（含 cache_ttl 等） | 1h |
+| `nanzi:meta:config:{resource_key}` | 单资源完整配置（含 cache_ttl 等） | 1h |
 
 实现：`app/services/meta_service.py` — 资源增删改须调用 `MetaService.invalidate_cache`
 
@@ -73,8 +73,8 @@
 
 | Key 规范 | 说明 | TTL |
 | :--- | :--- | :--- |
-| `yunshu:query:{res_key}:{params_hash}` | `/api/v1/query` 查询结果 | 资源 `cache_ttl` |
-| `yunshu:sql_exec:{query_hash}` | `/api/v1/sql/execute` 执行结果 | 请求 `cache_ttl` 或系统默认 |
+| `nanzi:query:{res_key}:{params_hash}` | `/api/v1/query` 查询结果 | 资源 `cache_ttl` |
+| `nanzi:sql_exec:{query_hash}` | `/api/v1/sql/execute` 执行结果 | 请求 `cache_ttl` 或系统默认 |
 
 `query_hash` / `params_hash` 均为 MD5，SQL 缓存含数据源 ID、最终 SQL 与 params。
 
@@ -93,7 +93,7 @@
 1. **主动失效**
    - 权限变更：`PermissionService.invalidate_user_cache` / `invalidate_role_cache`
    - 资源变更：`MetaService.invalidate_cache(resource_key)`
-   - 系统配置：`system.py` 更新时删除 `yunshu:config:{key}`
+   - 系统配置：`system.py` 更新时删除 `nanzi:config:{key}`
 
 2. **安全性**
    - `auth:api_key` 存储 Key 的 **SHA256 哈希**，非明文

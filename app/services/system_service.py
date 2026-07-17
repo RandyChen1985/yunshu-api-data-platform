@@ -10,7 +10,7 @@ class SystemService:
     """
     Service for handling system-wide configurations and maintenance tasks.
     """
-    CACHE_PREFIX = "yunshu:config:"
+    CACHE_PREFIX = "nanzi:config:"
     _local_cache = {}
     _last_refresh = 0
     REFRESH_INTERVAL = 60 # 1 minute local cache fallback

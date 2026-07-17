@@ -91,7 +91,7 @@ async with httpx.AsyncClient(timeout=SSO_TIMEOUT) as client:
 ```python
 SSO_API_URL: str = Field(default="https://yovole.net/api/v1/user/check/login")
 SSO_ACCESS_TOKEN: str = Field(default="laplace")
-SSO_REQUEST_SYSTEM: str = Field(default="YUNSHU_API_DATA_PLATFORM")
+SSO_REQUEST_SYSTEM: str = Field(default="NANZI_API_DATA_PLATFORM")
 SSO_REQUEST_BUSINESS: str = Field(default="USER-LOGIN")
 SSO_TIMEOUT: int = Field(default=30)
 ```
@@ -169,7 +169,7 @@ SSO_TIMEOUT: int = Field(default=30)
 ### SSO API 请求格式
 ```json
 {
-  "requestSystem": "YUNSHU_API_DATA_PLATFORM",
+  "requestSystem": "NANZI_API_DATA_PLATFORM",
   "requestBusiness": "USER-LOGIN",
   "operationType": "LOGIN",
   "userName": "username",

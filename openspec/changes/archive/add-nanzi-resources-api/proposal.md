@@ -1,13 +1,13 @@
-# Proposal: Add Yunshu Resources APIs (Rooms, Racks, Device Points)
+# Proposal: Add NanZi Resources APIs (Rooms, Racks, Device Points)
 
 ## 1. Goal
-Implement the remaining MVP resource APIs for "Yunshu" domain to provide standardized access to datacenter infrastructure metadata:
+Implement the remaining MVP resource APIs for "NanZi" domain to provide standardized access to datacenter infrastructure metadata:
 -   **Rooms (机房)**: `/yunshu/rooms`
 -   **Racks (机架)**: `/yunshu/racks`
 -   **Device Points (设备点位)**: `/yunshu/device-points`
 
 ## 2. Background
-According to `architech/design/API_SERVICE_SYSTEM_DESIGN.md`, these APIs are required for the Yunshu Ops Console and AI Agent Platform. They expose data from ClickHouse tables:
+According to `architech/design/API_SERVICE_SYSTEM_DESIGN.md`, these APIs are required for the NanZi Ops Console and AI Agent Platform. They expose data from ClickHouse tables:
 -   `ck_fact_yunshu_resroom_hbase`
 -   `ck_fact_yunshu_resjj_hbase`
 -   `ck_fact_yunshu_devicepoint_hbase`

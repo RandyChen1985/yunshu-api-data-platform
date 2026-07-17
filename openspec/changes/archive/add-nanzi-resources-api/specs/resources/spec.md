@@ -1,4 +1,4 @@
-# Spec: Yunshu Resources APIs
+# Spec: NanZi Resources APIs
 
 ## 1. Endpoints
 

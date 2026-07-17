@@ -80,7 +80,7 @@
 | `/api/portal/system/platform-settings` | `test_platform_settings.py` | 系统配置（目录/钉钉/MCP）、MCP 连通性测试 | ✅ 通过 | 2026-07-01 |
 | `/api/v1/resources` | `test_resources_list.py` | 可访问资源列表（MCP/Agent 发现） | ✅ 通过 | 2026-07-01 |
 | `/api/v1/mcp/status` | `test_resources_list.py` | MCP 启用状态探针 | ✅ 通过 | 2026-07-01 |
-| `yunshu_mcp` (stdio/SSE) | 手动 | MCP Server 工具与系统配置开关 | ⏳ 待验 | 2026-07-01 |
+| `nanzi_mcp` (stdio/SSE) | 手动 | MCP Server 工具与系统配置开关 | ⏳ 待验 | 2026-07-01 |
 | `/api/portal/catalog/settings` | `test_catalog.py` | 负责人策略配置读写 | ✅ 通过 | 2026-06-29 |
 | `db-prod/V26-data-product-catalog-module.sql` | 手动 | 数据产品目录全模块 DDL（含权限申请、collation、配置种子） | ⏳ 待验 | 2026-06-29 |
 | `db-prod/V27-revoke-catalog-requests-menu-default-grant.sql` | 手动 | 撤销 menu:catalog:requests 全员默认授予 | ⏳ 待验 | 2026-06-29 |
@@ -124,6 +124,7 @@
 | :-------------- | :---------------- | :----------------------------------------------- | :----- | :----------- |
 | Docker 镜像构建 | `docker/build_linux_x86.sh` | 基础镜像兼容性、Python 依赖冲突 (bcrypt/passlib) | ✅ 通过 | 2026-01-01   |
 | 跨平台兼容性    | CI/Docker         | Linux/Slim 镜像下的加密库依赖验证                | ✅ 通过 | 2026-01-01   |
+| 品牌重命名迁移  | `db-prod/V40-rebrand-nanzi.sql` | 默认品牌/MCP instructions 由云枢→南孜（幂等） | ⏳ 待验 | 2026-07-17   |
 
 ---
 **说明**:

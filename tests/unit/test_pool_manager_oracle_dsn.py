@@ -1,4 +1,4 @@
-"""Oracle DSN 构建与 yovole-yunshu-ai-agent-platform 语义对齐。"""
+"""Oracle DSN 构建与 yovole-nanzi-ai-agent-platform 语义对齐。"""
 from __future__ import annotations
 
 from types import SimpleNamespace

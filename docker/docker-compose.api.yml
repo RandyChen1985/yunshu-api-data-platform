@@ -3,14 +3,14 @@ version: '3.8'
 # 独立 API 容器：连接外部 MySQL / Redis（无内置 Redis）
 services:
   api:
-    image: yunshu-api:latest
-    container_name: yunshu-api
+    image: nanzi-api:latest
+    container_name: nanzi-api
     ports:
       - "8000:8000"
     env_file:
       - .env
     volumes:
-      - /app/yunshu-api/lib/instantclient_19_30:/opt/oracle/instantclient
+      - /app/nanzi-api/lib/instantclient_19_30:/opt/oracle/instantclient
     environment:
       - API_SERVICE_ENV=${API_SERVICE_ENV:-prod}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -20,7 +20,7 @@ services:
       - USE_ORACLE_THICK_MODE=${USE_ORACLE_THICK_MODE:-1}
       - MYSQL_HOST=${MYSQL_HOST:-host.docker.internal}
       - MYSQL_PORT=${MYSQL_PORT:-3306}
-      - MYSQL_DB=${MYSQL_DB:-yunshu_api_data_platform}
+      - MYSQL_DB=${MYSQL_DB:-nanzi_api_data_platform}
       - MYSQL_USER=${MYSQL_USER:-root}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - REDIS_HOST=${REDIS_HOST:-host.docker.internal}

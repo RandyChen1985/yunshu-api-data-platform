@@ -115,10 +115,10 @@ class DingTalkNotificationService:
     @classmethod
     async def send_test_message(cls, override: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
         """发送测试消息。override 为表单预览值，未保存也可测。"""
-        title = "云枢数据平台"
+        title = "南孜数据平台"
         text = (
             "### 钉钉通知测试\n\n"
-            "这是一条来自**云枢 · 数据服务平台**的测试消息，说明机器人配置可用。"
+            "这是一条来自**南孜 · 数据服务平台**的测试消息，说明机器人配置可用。"
         )
         if override is not None:
             if not override.get("enabled"):

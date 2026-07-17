@@ -36,7 +36,7 @@
 - **Then** 系统应返回按小时分组的分钟级最高请求次数
 - **And** 数据应排除系统内部调用的干扰（如 user_name = 'ALL' 汇总项，或根据具体业务需求过滤）
 
-## ADDED Requirements: yunshu-schema/system-config
+## ADDED Requirements: nanzi-schema/system-config
 
 ### Requirement: 流控配置项存储
 系统必须在 `sys_config` 表中维护以下流控参数。

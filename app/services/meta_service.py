@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class MetaService:
-    CACHE_KEY_PREFIX = "yunshu:meta:config:"
+    CACHE_KEY_PREFIX = "nanzi:meta:config:"
     CACHE_TTL = 3600 # 1 hour
     SYSTEM_RESOURCE_GROUP = "System"
 

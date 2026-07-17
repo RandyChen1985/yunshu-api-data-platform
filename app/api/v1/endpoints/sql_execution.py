@@ -282,7 +282,7 @@ async def execute_sql(
                 param_str = json.dumps(request.params, sort_keys=True) if request.params else ""
                 unique_str = f"{actual_ds_id}:{final_sql}:{param_str}"
                 query_hash = hashlib.md5(unique_str.encode()).hexdigest()
-                cache_key = f"yunshu:sql_exec:{query_hash}"
+                cache_key = f"nanzi:sql_exec:{query_hash}"
                 
                 r = await redis.get_redis()
                 if r:

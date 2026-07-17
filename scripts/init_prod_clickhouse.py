@@ -152,12 +152,12 @@ async def init_prod_db():
             """)
 
 
-            # --- 3. Yunshu Resources ---
+            # --- 3. NanZi Resources ---
             table_rooms = "ck_fact_yunshu_resroom_hbase"
             table_racks = "ck_fact_yunshu_resjj_hbase"
             table_points = "ck_fact_yunshu_devicepoint_hbase"
             
-            print(f"Initializing Yunshu Tables...")
+            print(f"Initializing NanZi Tables...")
             # Rooms
             await cursor.execute(f"DROP TABLE IF EXISTS {NEW_DB}.{table_rooms}")
             await cursor.execute(f"""

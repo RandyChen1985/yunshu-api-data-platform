@@ -1,7 +1,7 @@
 -- V25: 为元数据核心表添加创建人字段
 -- Description: 在数据集、表、指标和关系表中增加 created_by 字段，用于追踪创建者信息。
 
-USE yunshu_api_data_platform;
+USE nanzi_api_data_platform;
 
 -- 1. 为数据集表添加创建人
 ALTER TABLE `meta_datasets` 

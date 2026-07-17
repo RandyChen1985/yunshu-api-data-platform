@@ -8,8 +8,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- ----------------------------
 -- Create database if not exists
 -- ----------------------------
-CREATE DATABASE IF NOT EXISTS yunshu_api_data_platform;
-USE yunshu_api_data_platform;
+CREATE DATABASE IF NOT EXISTS nanzi_api_data_platform;
+USE nanzi_api_data_platform;
 
 -- ----------------------------
 -- 1. Table: api_users
@@ -109,7 +109,7 @@ INSERT INTO `sys_resource_meta` (`resource_key`, `resource_name`, `resource_grou
     1
 );
 
--- 3. 云枢机房 (Yunshu Rooms)
+-- 3. 南孜机房 (NanZi Rooms)
 INSERT INTO `sys_resource_meta` (`resource_key`, `resource_name`, `resource_group`, `data_source`, `table_name`, `fields_config`, `allowed_filters`, `default_sort`, `status`) VALUES (
     'yunshu_rooms', 
     '机房列表', 
@@ -122,7 +122,7 @@ INSERT INTO `sys_resource_meta` (`resource_key`, `resource_name`, `resource_grou
     1
 );
 
--- 4. 云枢机架 (Yunshu Racks)
+-- 4. 南孜机架 (NanZi Racks)
 INSERT INTO `sys_resource_meta` (`resource_key`, `resource_name`, `resource_group`, `data_source`, `table_name`, `fields_config`, `allowed_filters`, `default_sort`, `status`) VALUES (
     'yunshu_racks', 
     '机架列表', 
@@ -135,7 +135,7 @@ INSERT INTO `sys_resource_meta` (`resource_key`, `resource_name`, `resource_grou
     1
 );
 
--- 5. 云枢设备点位 (Yunshu Device Points)
+-- 5. 南孜设备点位 (NanZi Device Points)
 INSERT INTO `sys_resource_meta` (`resource_key`, `resource_name`, `resource_group`, `data_source`, `table_name`, `fields_config`, `allowed_filters`, `default_sort`, `status`) VALUES (
     'yunshu_device_points', 
     '设备点位', 

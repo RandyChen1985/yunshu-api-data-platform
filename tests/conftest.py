@@ -109,7 +109,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
                 """INSERT INTO sys_data_source 
                    (source_name, source_type, host, port, database_name, username, password, status) 
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                ("api_data", "mysql", "localhost", 3306, "yunshu_api_data_platform", "root", "root123", 1)
+                ("api_data", "mysql", "localhost", 3306, "nanzi_api_data_platform", "root", "root123", 1)
             )
 
             # 确保测试环境有这两个用户

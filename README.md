@@ -1,4 +1,4 @@
-# 云枢 · 数据服务平台 (Yunshu API Data Platform)
+# 南孜 · 数据服务平台 (NanZi API Data Platform)
 
 **简体中文** | [English](README_EN.md)
 
@@ -7,9 +7,9 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg?logo=vue.js&logoColor=white)](https://vuejs.org/) [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/) [![ClickHouse](https://img.shields.io/badge/ClickHouse-Ready-FFCC00.svg?logo=clickhouse&logoColor=black)](https://clickhouse.com/) [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql&logoColor=white)](https://www.mysql.com/) [![Redis](https://img.shields.io/badge/Redis-Active-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-![云枢 · 数据服务平台概览](docs/images/overview.png)
+![南孜 · 数据服务平台概览](docs/images/overview.png)
 
-**云枢 · 数据服务平台**是面向企业数据消费场景的一站式 **Data-as-a-Service (DaaS)** 中枢。它将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，为 AI Agent、运营控制台与业务系统提供标准化数据访问能力。
+**南孜 · 数据服务平台**是面向企业数据消费场景的一站式 **Data-as-a-Service (DaaS)** 中枢。它将物理表、自定义 SQL 与语义元数据统一封装为可治理、可审计、可观测的 RESTful API，为 AI Agent、运营控制台与业务系统提供标准化数据访问能力。
 
 平台核心聚焦于以下能力矩阵：
 
@@ -19,13 +19,13 @@
 *   📦 **数据产品目录 (Data Product Catalog)**：API 资源产品化发布、业务域浏览、权限申请/审批、资产全景 KPI 与调用量洞察。
 *   🛡️ **企业级安全审计**：按天分表审计日志、AST 静态 SQL 护栏、API Key + Session 双认证、数据脱敏策略。
 *   📊 **全链路可观测性**：24h/7d 调用趋势、Top 排行、分钟级统计聚合、连接池健康监控。
-*   🔌 **开放集成**：标准化 `/api/v1` 对外接口与管理后台 Portal API，可作为上游 **云枢 · 智能体平台** 的数据底座。
+*   🔌 **开放集成**：标准化 `/api/v1` 对外接口与管理后台 Portal API，可作为上游 **南孜 · 智能体平台** 的数据底座。
 
 ---
 
 ## 🏛️ 系统架构 (Architecture)
 
-![云枢 · 数据服务平台技术架构](docs/images/architech.png)
+![南孜 · 数据服务平台技术架构](docs/images/architech.png)
 
 ---
 
@@ -45,7 +45,7 @@
 
 ## 🌟 核心能力 (Core Capabilities)
 
-![云枢 · 数据服务平台核心能力](docs/images/features.png)
+![南孜 · 数据服务平台核心能力](docs/images/features.png)
 
 ### 1. 🚀 动态资源服务化 (Resource-as-an-API)
 
@@ -174,11 +174,11 @@ cp ../env.example .env   # 配置数据库、Redis、ENCRYPTION_KEY 等
 ./build_linux_x86.sh 1.0.0
 ```
 
-产物输出至 **`docker/release/`**，例如 `yunshu-api_1.0.0_linux-amd64_20260628.tar`。离线部署：
+产物输出至 **`docker/release/`**，例如 `nanzi-api_1.0.0_linux-amd64_20260628.tar`。离线部署：
 
 ```bash
-docker load -i docker/release/yunshu-api_1.0.0_linux-amd64_*.tar
-docker tag yunshu-api:1.0.0 yunshu-api:latest
+docker load -i docker/release/nanzi-api_1.0.0_linux-amd64_*.tar
+docker tag nanzi-api:1.0.0 nanzi-api:latest
 ```
 
 > Mac（Apple Silicon）部署到 x86 服务器时，务必使用 `build_linux_x86.sh`，不要用 `build_native.sh`。
@@ -195,7 +195,7 @@ docker tag yunshu-api:1.0.0 yunshu-api:latest
 **3. 启动服务**
 
 ```bash
-./start-yunshu-api-server.sh
+./start-nanzi-api-server.sh
 ```
 
 服务默认监听 **http://localhost:8000**（管理后台、`/docs` API 文档）。
@@ -246,9 +246,9 @@ cd frontend && npm run dev
 
 ---
 
-## 🔗 与云枢生态的关系
+## 🔗 与南孜生态的关系
 
-本平台是 **云枢 · 智维 · AI** 体系中的数据服务层，与 [云枢 · 智能体平台](https://github.com/RandyChen1985/yunshu-ai-agent-platform) 互补：
+本平台是 **南孜 · 智维 · AI** 体系中的数据服务层，与 [南孜 · 智能体平台](https://github.com/RandyChen1985/nanzi-ai-agent-platform) 互补：
 
 | 平台 | 定位 |
 |------|------|
@@ -271,7 +271,7 @@ cd frontend && npm run dev
 
 ## 💬 联系与交流
 
-- **Issue**：欢迎在 [GitHub Issues](https://github.com/RandyChen1985/yunshu-api-data-platform/issues) 中反馈问题与功能建议。
+- **Issue**：欢迎在 [GitHub Issues](https://github.com/RandyChen1985/nanzi-api-data-platform/issues) 中反馈问题与功能建议。
 - **邮件**：可通过 Issue 留言与我们取得联系。
 
 如果您在使用过程中有任何疑问、功能建议，或者想要获取更多技术资讯，欢迎扫码关注我们的微信公众号：
@@ -286,4 +286,4 @@ cd frontend && npm run dev
 
 ---
 
-Copyright © 2025-2026 Yunshu API Data Platform Contributors. All Rights Reserved.
+Copyright © 2025-2026 NanZi API Data Platform Contributors. All Rights Reserved.

@@ -1,4 +1,4 @@
-"""云枢数据平台 MCP Server — 将 /api/v1 能力暴露为 MCP Tools。"""
+"""南孜数据平台 MCP Server — 将 /api/v1 能力暴露为 MCP Tools。"""
 
 from __future__ import annotations
 
@@ -11,16 +11,16 @@ import httpx
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
 
-from yunshu_mcp.auth_context import get_mcp_api_key
+from nanzi_mcp.auth_context import get_mcp_api_key
 
 
-class YunshuApiError(Exception):
+class NanZiApiError(Exception):
     pass
 
 
-class YunshuApiClient:
+class NanZiApiClient:
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
-        self.base_url = (base_url or os.getenv("YUNSHU_BASE_URL") or "").rstrip("/")
+        self.base_url = (base_url or os.getenv("NANZI_BASE_URL") or "").rstrip("/")
         self.api_key = (api_key or get_mcp_api_key() or "").strip()
 
     async def resolve_base_url(self) -> str:
@@ -36,9 +36,9 @@ class YunshuApiClient:
 
     def _headers(self) -> Dict[str, str]:
         if not self.api_key:
-            raise YunshuApiError(
+            raise NanZiApiError(
                 "未配置 API Key：SSE 请在 Cursor MCP 的 headers 中设置 X-API-Key；"
-                "stdio 请在 env 中设置 YUNSHU_API_KEY（使用您个人的 API Key）"
+                "stdio 请在 env 中设置 NANZI_API_KEY（使用您个人的 API Key）"
             )
         return {"X-API-Key": self.api_key, "Content-Type": "application/json"}
 
@@ -46,12 +46,12 @@ class YunshuApiClient:
         try:
             body = resp.json()
         except Exception as exc:
-            raise YunshuApiError(f"非 JSON 响应 ({resp.status_code}): {resp.text[:200]}") from exc
+            raise NanZiApiError(f"非 JSON 响应 ({resp.status_code}): {resp.text[:200]}") from exc
         if resp.status_code >= 400:
-            raise YunshuApiError(body.get("message") or body.get("detail") or resp.text)
+            raise NanZiApiError(body.get("message") or body.get("detail") or resp.text)
         code = body.get("code")
         if code is not None and int(code) != 200:
-            raise YunshuApiError(body.get("message") or f"业务错误 code={code}")
+            raise NanZiApiError(body.get("message") or f"业务错误 code={code}")
         return body.get("data")
 
     async def mcp_status(self) -> Dict[str, Any]:

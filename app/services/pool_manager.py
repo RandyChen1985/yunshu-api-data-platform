@@ -146,7 +146,7 @@ class DataSourcePoolManager:
     @staticmethod
     def _build_oracle_dsn(datasource: Any) -> str:
         """
-        Build Oracle connect descriptor via makedsn (same semantics as yovole-yunshu-ai-agent-platform).
+        Build Oracle connect descriptor via makedsn (same semantics as yovole-nanzi-ai-agent-platform).
 
         Default: database_name is SID. For SERVICE_NAME use either:
         - extra_params.service_name — explicit service name, or

@@ -173,7 +173,7 @@ async def test_mcp_test_enabled(client: AsyncClient, admin_api_key: str):
     assert res.status_code == 200
     body = res.json()
     assert "checks" in body
-    assert "yunshu_list_resources" in body.get("tools", [])
+    assert "nanzi_list_resources" in body.get("tools", [])
     sdk_check = next(c for c in body["checks"] if c["name"] == "MCP SDK")
     assert sdk_check["ok"] is True
 

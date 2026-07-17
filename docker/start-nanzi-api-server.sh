@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 云枢数据服务平台 - Docker 启动脚本
+# 南孜数据服务平台 - Docker 启动脚本
 # 用途：启动 API 服务容器（依赖外部 MySQL/ClickHouse/Redis）
 
 set -e
@@ -9,14 +9,14 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
 COMPOSE_FILE="docker-compose.api.yml"
-CONTAINER_NAME="yunshu-api"
+CONTAINER_NAME="nanzi-api"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}=== 云枢数据服务平台 Docker 启动 ===${NC}"
+echo -e "${GREEN}=== 南孜数据服务平台 Docker 启动 ===${NC}"
 
 if [ ! -f ".env" ]; then
     echo -e "${RED}错误: .env 文件不存在${NC}"
@@ -24,8 +24,8 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-if ! docker images | grep -q "yunshu-api"; then
-    echo -e "${YELLOW}警告: yunshu-api 镜像不存在${NC}"
+if ! docker images | grep -q "nanzi-api"; then
+    echo -e "${YELLOW}警告: nanzi-api 镜像不存在${NC}"
     echo "请先构建镜像，例如: ./build_linux_x86.sh 1.2.0"
     exit 1
 fi
@@ -59,7 +59,7 @@ if [ "$(docker ps -q -f name=${CONTAINER_NAME})" ]; then
     echo "  - 管理后台: http://localhost:8000/"
     echo ""
     echo "查看日志: docker logs -f ${CONTAINER_NAME}"
-    echo "停止服务: ./stop-yunshu-api-server.sh"
+    echo "停止服务: ./stop-nanzi-api-server.sh"
 else
     echo -e "${RED}✗ 服务启动失败${NC}"
     echo "查看日志: docker logs ${CONTAINER_NAME}"

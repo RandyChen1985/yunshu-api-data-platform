@@ -2,7 +2,7 @@
         if username and password:
             try:
                 api_request = {
-                    'requestSystem': 'YUNSHU_API_DATA_PLATFORM',
+                    'requestSystem': 'NANZI_API_DATA_PLATFORM',
                     'requestBusiness': 'USER-LOGIN',
                     'operationType': 'LOGIN',
                     'userName': username,

@@ -1,4 +1,4 @@
-# 云枢 · 数据服务平台 — 前端
+# 南孜 · 数据服务平台 — 前端
 
 Vue 3 + TypeScript + Vite + TailwindCSS 管理后台。
 

@@ -1,6 +1,6 @@
 """MCP SSE API Key 上下文测试"""
 
-from yunshu_mcp.auth_context import (
+from nanzi_mcp.auth_context import (
     bind_session_api_key,
     extract_api_key_from_scope,
     extract_session_id_from_scope,
@@ -48,7 +48,7 @@ def test_resolve_api_key_prefers_header_then_session():
 
 
 def test_contextvar_api_key(monkeypatch):
-    monkeypatch.delenv("YUNSHU_API_KEY", raising=False)
+    monkeypatch.delenv("NANZI_API_KEY", raising=False)
     token = set_mcp_api_key("sk-ctx")
     try:
         assert get_mcp_api_key() == "sk-ctx"
@@ -57,5 +57,5 @@ def test_contextvar_api_key(monkeypatch):
 
 
 def test_env_fallback_when_no_context(monkeypatch):
-    monkeypatch.setenv("YUNSHU_API_KEY", "sk-env")
+    monkeypatch.setenv("NANZI_API_KEY", "sk-env")
     assert get_mcp_api_key() == "sk-env"
