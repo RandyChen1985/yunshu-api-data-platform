@@ -101,6 +101,27 @@ class AuthService:
                 return cursor.rowcount > 0
 
     @staticmethod
+    async def admin_set_password(user_id: int, new_password: str) -> bool:
+        """管理员直接设置用户密码，无需旧密码校验。"""
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT id FROM api_users WHERE id = %s", (user_id,))
+                if not await cursor.fetchone():
+                    return False
+
+                password_hash = AuthService.get_password_hash(new_password)
+                await cursor.execute(
+                    "UPDATE api_users SET password_hash = %s WHERE id = %s",
+                    (password_hash, user_id),
+                )
+                await conn.commit()
+
+                from app.services.permission_service import PermissionService
+                await PermissionService.invalidate_user_cache(int(user_id))
+
+                return cursor.rowcount > 0
+
+    @staticmethod
     async def authenticate_user(username: str, password: str) -> Optional[Dict]:
         """
         Authenticate a user by username and password.

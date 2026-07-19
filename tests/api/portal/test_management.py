@@ -272,3 +272,51 @@ async def test_reset_user_api_key(client: AsyncClient, admin_api_key: str):
     assert "api_key" in data
     assert data["api_key"] != old_key
 
+
+@pytest.mark.asyncio
+async def test_set_user_password(client: AsyncClient, admin_api_key: str):
+    """Test admin setting password for a user"""
+    import time
+    unique_username = f"set_pwd_{int(time.time())}"
+    create_response = await client.post(
+        "/api/portal/management/users",
+        headers={"X-API-Key": admin_api_key},
+        json={"user_name": unique_username, "role": "user"},
+    )
+    assert create_response.status_code == 200
+    user_id = create_response.json()["id"]
+
+    # Too short password
+    bad = await client.post(
+        f"/api/portal/management/users/{user_id}/set-password",
+        headers={"X-API-Key": admin_api_key},
+        json={"new_password": "123"},
+    )
+    assert bad.status_code in (400, 422)
+
+    # Set password
+    response = await client.post(
+        f"/api/portal/management/users/{user_id}/set-password",
+        headers={"X-API-Key": admin_api_key},
+        json={"new_password": "TestPass123"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user_id"] == user_id
+    assert data["user_name"] == unique_username
+
+    # Login with new password
+    login = await client.post(
+        "/api/portal/auth/login",
+        json={"username": unique_username, "password": "TestPass123"},
+    )
+    assert login.status_code == 200
+
+    # Not found
+    missing = await client.post(
+        "/api/portal/management/users/99999999/set-password",
+        headers={"X-API-Key": admin_api_key},
+        json={"new_password": "TestPass123"},
+    )
+    assert missing.status_code == 404
+
