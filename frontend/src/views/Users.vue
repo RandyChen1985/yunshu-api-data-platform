@@ -455,6 +455,62 @@
       </div>
     </div>
 
+    <!-- Set Password Dialog -->
+    <div v-if="showSetPasswordDialog" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9990]" @click.self="closeSetPasswordDialog">
+      <div class="bg-white rounded-lg p-6 w-full max-w-md">
+        <h2 class="text-xl font-bold mb-4 text-indigo-600">设置密码</h2>
+        <p class="text-sm text-gray-600 mb-4">
+          为用户 <strong class="text-gray-900">{{ userToSetPassword?.user_name }}</strong> 设置新的登录密码。用户可用该密码登录系统。
+        </p>
+        <form class="space-y-4" @submit.prevent="executeSetPassword">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">新密码</label>
+            <input
+              v-model="setPasswordForm.newPassword"
+              type="password"
+              required
+              minlength="6"
+              autocomplete="new-password"
+              class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="至少 6 位"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">确认密码</label>
+            <input
+              v-model="setPasswordForm.confirmPassword"
+              type="password"
+              required
+              minlength="6"
+              autocomplete="new-password"
+              class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="再次输入新密码"
+            />
+          </div>
+          <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p class="text-xs text-amber-800">设置后立即生效，无需用户提供旧密码。</p>
+          </div>
+          <div class="flex justify-end gap-3 pt-1">
+            <button
+              type="button"
+              class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              :disabled="settingPassword"
+              @click="closeSetPasswordDialog"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+              :disabled="settingPassword"
+            >
+              {{ settingPassword ? '保存中...' : '确认设置' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Regenerate API Key Dialog -->
     <div v-if="showRegenerateDialog" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9990]" @click.self="showRegenerateDialog = false">
       <div class="bg-white rounded-lg p-6 w-full max-w-md">
@@ -574,7 +630,7 @@
   <Teleport to="body">
     <div
       v-if="openMoreUser && moreMenuStyle"
-      class="fixed z-[9998] w-36 bg-white border border-gray-100 rounded-lg shadow-xl py-1 overflow-hidden"
+      class="fixed z-[9998] w-40 bg-white border border-gray-100 rounded-lg shadow-xl py-1 overflow-hidden"
       :style="moreMenuStyle"
       @click.stop
     >
@@ -593,6 +649,14 @@
       >
         <ArrowPathIcon class="w-3.5 h-3.5 shrink-0" />
         重置 API Key
+      </button>
+      <button
+        type="button"
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 transition-colors"
+        @click="openSetPassword(openMoreUser); closeMore()"
+      >
+        <LockClosedIcon class="w-3.5 h-3.5 shrink-0" />
+        设置密码
       </button>
       <div v-if="openMoreUser.user_name !== 'admin'" class="h-px bg-gray-100 mx-2 my-1" />
       <button
@@ -621,7 +685,8 @@ import {
   KeyIcon, 
   ArrowPathIcon, 
   PencilSquareIcon, 
-  TrashIcon
+  TrashIcon,
+  LockClosedIcon,
 } from '@heroicons/vue/24/outline'
 import { PERMISSION_MENU_TREE as MENU_TREE } from '@/constants/permissionMenuTree'
 
@@ -713,7 +778,7 @@ const {
   closeMore,
   bindGlobalClose,
   unbindGlobalClose,
-} = useActionMoreMenu(users, { estHeight: 160 })
+} = useActionMoreMenu(users, { estHeight: 200 })
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
@@ -731,9 +796,16 @@ const showEditDialog = ref(false)
 const showDeleteDialog = ref(false)
 const showRegenerateDialog = ref(false)
 const showViewKeyDialog = ref(false)
+const showSetPasswordDialog = ref(false)
 const userToDelete = ref<any>(null)
 const userToRegenerate = ref<any>(null)
 const userToViewKey = ref<any>(null)
+const userToSetPassword = ref<any>(null)
+const settingPassword = ref(false)
+const setPasswordForm = ref({
+  newPassword: '',
+  confirmPassword: '',
+})
 const loadingViewKey = ref(false)
 const viewedApiKey = ref('')
 const activeTab = ref<'basic' | 'permissions'>('basic')
@@ -1079,6 +1151,51 @@ const deleteUser = async () => {
   } catch (e: any) {
     console.error('Failed to delete user:', e)
     showToast(e.response?.data?.message || '删除失败', 'error')
+  }
+}
+
+const openSetPassword = (user: any) => {
+  userToSetPassword.value = user
+  setPasswordForm.value = { newPassword: '', confirmPassword: '' }
+  showSetPasswordDialog.value = true
+}
+
+const closeSetPasswordDialog = () => {
+  showSetPasswordDialog.value = false
+  userToSetPassword.value = null
+  settingPassword.value = false
+  setPasswordForm.value = { newPassword: '', confirmPassword: '' }
+}
+
+const executeSetPassword = async () => {
+  if (!userToSetPassword.value) return
+
+  const newPassword = setPasswordForm.value.newPassword
+  const confirmPassword = setPasswordForm.value.confirmPassword
+  if (!newPassword || newPassword.length < 6) {
+    showToast('密码至少 6 位', 'warning')
+    return
+  }
+  if (newPassword !== confirmPassword) {
+    showToast('两次输入的密码不一致', 'warning')
+    return
+  }
+
+  settingPassword.value = true
+  try {
+    const apiKey = localStorage.getItem('api_key')
+    await axios.post(
+      `/api/portal/management/users/${userToSetPassword.value.id}/set-password`,
+      { new_password: newPassword },
+      { headers: { 'X-API-Key': apiKey } },
+    )
+    showToast(`已为 ${userToSetPassword.value.user_name} 设置密码`, 'success')
+    closeSetPasswordDialog()
+  } catch (e: any) {
+    console.error('Failed to set password:', e)
+    showToast(e.response?.data?.detail || e.response?.data?.message || '设置密码失败', 'error')
+  } finally {
+    settingPassword.value = false
   }
 }
 

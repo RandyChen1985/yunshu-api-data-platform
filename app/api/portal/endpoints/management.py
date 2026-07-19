@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict
 from app.core.dependencies import require_admin, require_api_key, require_permission
 from app.core.database import get_db_connection
@@ -35,6 +35,11 @@ class UpdateUserRequest(BaseModel):
 
 class UpdateStatusRequest(BaseModel):
     status: int  # 1=enabled, 0=disabled
+
+
+class SetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=6, description="新密码")
+
 
 class RoleCreateRequest(BaseModel):
     role_code: str
@@ -837,4 +842,40 @@ async def reset_user_api_key(user_id: int, user: dict = Depends(require_permissi
         "message": "API Key reset successfully",
         "user_id": user_id,
         "api_key": new_api_key
+    }
+
+
+@router.post("/users/{user_id}/set-password")
+async def set_user_password(
+    user_id: int,
+    request: SetPasswordRequest,
+    user: dict = Depends(require_permission("element:user:manage")),
+):
+    """
+    管理员为指定用户设置登录密码（无需旧密码）。
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(
+                "SELECT id, user_name FROM api_users WHERE id = %s",
+                (user_id,),
+            )
+            target = await cursor.fetchone()
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+    success = await AuthService.admin_set_password(user_id, request.new_password)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to set password",
+        )
+
+    return {
+        "message": "Password set successfully",
+        "user_id": user_id,
+        "user_name": target[1],
     }
